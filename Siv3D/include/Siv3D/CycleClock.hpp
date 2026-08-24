@@ -13,6 +13,8 @@
 # include "Common.hpp"
 # if SIV3D_PLATFORM(WINDOWS)
 #	include <intrin.h>
+# elif SIV3D_PLATFORM(WEB)
+#	include <chrono>
 # endif
 
 namespace s3d

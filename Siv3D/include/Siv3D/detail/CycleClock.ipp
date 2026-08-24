@@ -37,6 +37,10 @@ namespace s3d
 		__asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(value));
 		return value;
 
+	# elif SIV3D_PLATFORM(WEB)
+
+		return std::chrono::steady_clock::now().time_since_epoch().count();
+
 	# else
 
 		# error Unimplemented
