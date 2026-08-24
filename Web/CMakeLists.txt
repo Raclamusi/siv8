@@ -27,7 +27,14 @@ set(SIV3D_CXX_FLAGS
     ${SIV3D_C_FLAGS}
     -fexceptions
 )
+set(SIV3D_PRIVATE_CXX_FLAGS
+    -Wno-deprecated-declarations
+    -Wno-unused-template
+)
 set(SIV3D_PREPROCESSOR_DEFINITIONS
+    $<$<CONFIG:Debug>:_DEBUG>
+)
+set(SIV3D_PRIVATE_PREPROCESSOR_DEFINITIONS
     SIV3D_LIBRARY_BUILD
     # ZSTD_MULTITHREAD
     ONIG_STATIC
@@ -87,12 +94,11 @@ target_compile_options(Siv3D
         $<$<COMPILE_LANGUAGE:C>:${SIV3D_C_FLAGS}>
         $<$<COMPILE_LANGUAGE:CXX>:${SIV3D_CXX_FLAGS}>
     PRIVATE
-        -Wno-deprecated-pragma
-        -Wno-deprecated-declarations
+        $<$<COMPILE_LANGUAGE:CXX>:${SIV3D_PRIVATE_CXX_FLAGS}>
 )
 target_compile_definitions(Siv3D
-    PUBLIC  $<$<CONFIG:Debug>:_DEBUG>
-    PRIVATE ${SIV3D_PREPROCESSOR_DEFINITIONS}
+    PUBLIC  ${SIV3D_PREPROCESSOR_DEFINITIONS}
+    PRIVATE ${SIV3D_PRIVATE_PREPROCESSOR_DEFINITIONS}
 )
 target_include_directories(Siv3D
     PUBLIC
