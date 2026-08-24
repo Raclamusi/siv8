@@ -3431,7 +3431,13 @@ XXH_PUBLIC_API XXH64_hash_t XXH64_hashFromCanonical(XXH_NOESCAPE const XXH64_can
    || defined(_M_ARM64) || defined(_M_ARM64EC) \
    || (defined(__wasm_simd128__) && XXH_HAS_INCLUDE(<arm_neon.h>)) /* WASM SIMD128 via SIMDe */
 #    define inline __inline__  /* circumvent a clang bug */
-#    include <arm_neon.h>
+#    if defined(__wasm_simd128__) && defined(__cplusplus)
+extern "C++" {
+#      include <arm_neon.h>
+} /* extern "C++" */
+#    else
+#      include <arm_neon.h>
+#    endif
 #    undef inline
 #  elif defined(__AVX2__)
 #    include <immintrin.h>
