@@ -20,7 +20,7 @@ set(SIV3D_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Siv3D")
 
 set(SIV3D_C_FLAGS
     -Wall -Wextra
-    -msimd128 -msse4.2
+    -msimd128
     -fcolor-diagnostics
 )
 set(SIV3D_CXX_FLAGS
@@ -32,6 +32,7 @@ set(SIV3D_PRIVATE_CXX_FLAGS
     -Wno-unused-template
 )
 set(SIV3D_PREPROCESSOR_DEFINITIONS
+    _XM_NO_INTRINSICS_
     $<$<CONFIG:Debug>:_DEBUG>
 )
 set(SIV3D_PRIVATE_PREPROCESSOR_DEFINITIONS
