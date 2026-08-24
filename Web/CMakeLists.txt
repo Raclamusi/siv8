@@ -179,9 +179,9 @@ target_link_options(Siv3DTest PRIVATE
     -g2
     -fexceptions
     -sASYNCIFY=1
-    --preload-file="${CMAKE_CURRENT_SOURCE_DIR}/../Test/data@/data"
-    --preload-file="${CMAKE_CURRENT_SOURCE_DIR}/App/engine@/engine"
-    --preload-file="${CMAKE_CURRENT_SOURCE_DIR}/App/example@/example"
+    "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/../Test/data@/data"
+    "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/App/engine@/engine"
+    "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/App/example@/example"
 )
 set_target_properties(Siv3DTest PROPERTIES
     SUFFIX ".html"
