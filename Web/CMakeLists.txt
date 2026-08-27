@@ -19,17 +19,19 @@ include(GNUInstallDirs)
 set(SIV3D_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Siv3D")
 
 set(SIV3D_C_FLAGS
-    -Wall -Wextra
     -msimd128
-    -fcolor-diagnostics
 )
 set(SIV3D_CXX_FLAGS
     ${SIV3D_C_FLAGS}
     -fexceptions
 )
-set(SIV3D_PRIVATE_CXX_FLAGS
+set(SIV3D_PRIVATE_C_CXX_FLAGS
+    -Wall
+    -Wextra
     -Wno-deprecated-declarations
+    -Wno-unused-parameter
     -Wno-unused-template
+    -fcolor-diagnostics
 )
 set(SIV3D_PREPROCESSOR_DEFINITIONS
     _XM_NO_INTRINSICS_
@@ -95,7 +97,7 @@ target_compile_options(Siv3D
         $<$<COMPILE_LANGUAGE:C>:${SIV3D_C_FLAGS}>
         $<$<COMPILE_LANGUAGE:CXX>:${SIV3D_CXX_FLAGS}>
     PRIVATE
-        $<$<COMPILE_LANGUAGE:CXX>:${SIV3D_PRIVATE_CXX_FLAGS}>
+        ${SIV3D_PRIVATE_C_CXX_FLAGS}
 )
 target_compile_definitions(Siv3D
     PUBLIC  ${SIV3D_PREPROCESSOR_DEFINITIONS}
