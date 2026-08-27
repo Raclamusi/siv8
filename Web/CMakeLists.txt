@@ -18,11 +18,8 @@ include(GNUInstallDirs)
 
 set(SIV3D_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../Siv3D")
 
-set(SIV3D_C_FLAGS
+set(SIV3D_C_CXX_FLAGS
     -msimd128
-)
-set(SIV3D_CXX_FLAGS
-    ${SIV3D_C_FLAGS}
     -fexceptions
 )
 set(SIV3D_PRIVATE_C_CXX_FLAGS
@@ -53,6 +50,7 @@ set(SIV3D_PRIVATE_PREPROCESSOR_DEFINITIONS
     _UNICODE
 )
 set(SIV3D_EXE_LINKER_FLAGS
+    -fexceptions
     -sUSE_GLFW=3
     -sFULL_ES3
     -sMIN_WEBGL_VERSION=2
@@ -93,11 +91,8 @@ set_target_properties(Siv3D PROPERTIES
     DEBUG_POSTFIX "d"
 )
 target_compile_options(Siv3D
-    PUBLIC
-        $<$<COMPILE_LANGUAGE:C>:${SIV3D_C_FLAGS}>
-        $<$<COMPILE_LANGUAGE:CXX>:${SIV3D_CXX_FLAGS}>
-    PRIVATE
-        ${SIV3D_PRIVATE_C_CXX_FLAGS}
+    PUBLIC  ${SIV3D_C_CXX_FLAGS}
+    PRIVATE ${SIV3D_PRIVATE_C_CXX_FLAGS}
 )
 target_compile_definitions(Siv3D
     PUBLIC  ${SIV3D_PREPROCESSOR_DEFINITIONS}
@@ -119,7 +114,7 @@ target_include_directories(Siv3D
         "${SIV3D_DIR}/src/ThirdParty-prebuilt/freetype"
         "${CMAKE_CURRENT_SOURCE_DIR}/../Dependencies/boost_1_88_0"
 )
-target_link_options(Siv3D PUBLIC
+target_link_options(Siv3D INTERFACE
     ${SIV3D_EXE_LINKER_FLAGS}
     "$<BUILD_INTERFACE:--js-library=${CMAKE_CURRENT_BINARY_DIR}/Siv3D.js>"
     "$<INSTALL_INTERFACE:--js-library=${CMAKE_INSTALL_LIBDIR}/Siv3D/Siv3D.js>"
@@ -180,7 +175,6 @@ target_link_libraries(Siv3DTest PRIVATE Siv3D)
 target_link_options(Siv3DTest PRIVATE
     --emrun
     -g2
-    -fexceptions
     -sASYNCIFY=1
     "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/../Test/data@/data"
     "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/App/engine@/engine"
