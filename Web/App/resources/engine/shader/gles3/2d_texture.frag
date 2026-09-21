@@ -1,4 +1,15 @@
-#version 300 es
+﻿#version 300 es
+
+//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
 
 precision mediump float;
 
@@ -44,9 +55,7 @@ vec4 s3d_textureColor(vec4 vertexColorPMA, const vec4 textureColorPMA)
 //
 void main()
 {
-	vec4 colorPMA = s3d_textureColor(ColorPMA, texture(Texture0, UV));
+	vec4 texColor = texture(Texture0, UV);
 
-	float yPMA = dot(colorPMA.rgb, vec3(0.299, 0.587, 0.114));
-
-	FragColor = vec4(vec3(yPMA), colorPMA.a);
+	FragColor = s3d_textureColor(ColorPMA, texColor);
 }
