@@ -134,6 +134,31 @@ namespace s3d
 		[[nodiscard]]
 		static PixelShader MSL(const std::string& source, StringView entryPoint);
 
+		////////////////////////////////////////////////////////////////
+		//
+		//	ESSL
+		//
+		////////////////////////////////////////////////////////////////
+
+		/// @brief ESSL ファイルからピクセルシェーダを作成します。
+		/// @param path ESSL ファイルのパス
+		/// @return ピクセルシェーダ
+		[[nodiscard]]
+		static PixelShader ESSL(FilePathView path);
+
+		[[nodiscard]]
+		static PixelShader ESSL(std::unique_ptr<IReader> reader);
+
+		template <ReaderObject Reader>
+		[[nodiscard]]
+		static PixelShader ESSL(Reader&& reader);
+
+		/// @brief ESSL ソースコードからピクセルシェーダを作成します。
+		/// @param source ESSL ソースコード
+		/// @return ピクセルシェーダ
+		[[nodiscard]]
+		static PixelShader ESSL(const std::string& source);
+
 	private:
 
 		[[nodiscard]]

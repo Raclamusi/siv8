@@ -36,4 +36,16 @@ namespace s3d
 	{
 		return VertexShader{ std::make_unique<Reader>(std::forward<Reader>(reader)), entryPoint };
 	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	ESSL
+	//
+	////////////////////////////////////////////////////////////////
+
+	template <ReaderObject Reader>
+	VertexShader VertexShader::ESSL(Reader&& reader)
+	{
+		return VertexShader{ std::make_unique<Reader>(std::forward<Reader>(reader)), U"main" };
+	}
 }

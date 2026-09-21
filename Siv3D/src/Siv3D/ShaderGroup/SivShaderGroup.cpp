@@ -22,9 +22,10 @@ namespace s3d
 	//
 	////////////////////////////////////////////////////////////////
 
-	ShaderGroup::ShaderGroup(const Optional<HLSL>& hlsl, const Optional<MSL>& msl)
+	ShaderGroup::ShaderGroup(const Optional<HLSL>& hlsl, const Optional<MSL>& msl, const Optional<ESSL>& essl)
 		: m_hlsl{ hlsl }
-		, m_msl{ msl } {}
+		, m_msl{ msl }
+		, m_essl{ essl } {}
 
 	////////////////////////////////////////////////////////////////
 	//
@@ -44,6 +45,11 @@ namespace s3d
 		{
 			assert(m_msl);
 			return *m_msl;
+		}
+		else if (renderer == EngineOption::Renderer::OpenGLES3)
+		{
+			assert(m_essl);
+			return *m_essl;
 		}
 
 		return{};
@@ -68,7 +74,33 @@ namespace s3d
 			assert(m_msl);
 			return *m_msl;
 		}
+		else if (renderer == EngineOption::Renderer::OpenGLES3)
+		{
+			assert(m_essl);
+			return *m_essl;
+		}
 
 		return{};
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	operator |
+	//
+	////////////////////////////////////////////////////////////////
+
+	ShaderGroup ShaderGroup::operator |(const HLSL& hlsl) const
+	{
+		return{ hlsl, m_msl, m_essl };
+	}
+
+	ShaderGroup ShaderGroup::operator |(const MSL& msl) const
+	{
+		return{ m_hlsl, msl, m_essl };
+	}
+
+	ShaderGroup ShaderGroup::operator |(const ESSL& essl) const
+	{
+		return{ m_hlsl, m_msl, essl };
 	}
 }

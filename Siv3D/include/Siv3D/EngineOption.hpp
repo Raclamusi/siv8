@@ -27,6 +27,10 @@ namespace s3d
 			/// @brief Metal
 			/// @remark 対応: macOS
 			Metal = 2,
+
+			/// @brief OpenGL ES 3.0
+			/// @remark 対応: Web
+			OpenGLES3 = 4,
 		};
 
 		/// @brief Direct3D 11 ドライバーの種類 (Windows 版)

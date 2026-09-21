@@ -37,7 +37,12 @@ namespace s3d
 
 	ShaderGroup MSL::operator |(const HLSL& hlsl) const
 	{
-		return{ hlsl, *this };
+		return{ hlsl, *this, none };
+	}
+
+	ShaderGroup MSL::operator |(const ESSL& essl) const
+	{
+		return{ none, *this, essl };
 	}
 
 	////////////////////////////////////////////////////////////////

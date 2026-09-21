@@ -150,6 +150,31 @@ namespace s3d
 		[[nodiscard]]
 		static VertexShader MSL(const std::string& source, StringView entryPoint);
 
+		////////////////////////////////////////////////////////////////
+		//
+		//	ESSL
+		//
+		////////////////////////////////////////////////////////////////
+
+		/// @brief ESSL ファイルから頂点シェーダを作成します。
+		/// @param path ESSL ファイルのパス
+		/// @return 頂点シェーダ
+		[[nodiscard]]
+		static VertexShader ESSL(FilePathView path);
+
+		[[nodiscard]]
+		static VertexShader ESSL(std::unique_ptr<IReader> reader);
+
+		template <ReaderObject Reader>
+		[[nodiscard]]
+		static VertexShader ESSL(Reader&& reader);
+
+		/// @brief ESSL ソースコードから頂点シェーダを作成します。
+		/// @param source ESSL ソースコード
+		/// @return 頂点シェーダ
+		[[nodiscard]]
+		static VertexShader ESSL(const std::string& source);
+
 	private:
 
 		[[nodiscard]]

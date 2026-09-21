@@ -23,6 +23,7 @@ namespace s3d
 	class PixelShader;
 	class ShaderGroup;
 	class MSL;
+	class ESSL;
 
 	////////////////////////////////////////////////////////////////
 	//
@@ -92,6 +93,9 @@ namespace s3d
 
 		[[nodiscard]]
 		ShaderGroup operator |(const MSL& msl) const;
+
+		[[nodiscard]]
+		ShaderGroup operator |(const ESSL& essl) const;
 
 		////////////////////////////////////////////////////////////////
 		//

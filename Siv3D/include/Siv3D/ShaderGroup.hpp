@@ -14,6 +14,7 @@
 # include "Optional.hpp"
 # include "HLSL.hpp"
 # include "MSL.hpp"
+# include "ESSL.hpp"
 
 namespace s3d
 {
@@ -37,7 +38,7 @@ namespace s3d
 		ShaderGroup() = default;
 
 		[[nodiscard]]
-		ShaderGroup(const Optional<HLSL>& hlsl, const Optional<MSL>& msl);
+		ShaderGroup(const Optional<HLSL>& hlsl, const Optional<MSL>& msl, const Optional<ESSL>& essl);
 
 		////////////////////////////////////////////////////////////////
 		//
@@ -57,10 +58,27 @@ namespace s3d
 		[[nodiscard]]
 		operator PixelShader() const;
 
+		////////////////////////////////////////////////////////////////
+		//
+		//	operator |
+		//
+		////////////////////////////////////////////////////////////////
+
+		[[nodiscard]]
+		ShaderGroup operator |(const HLSL& hlsl) const;
+
+		[[nodiscard]]
+		ShaderGroup operator |(const MSL& msl) const;
+
+		[[nodiscard]]
+		ShaderGroup operator |(const ESSL& essl) const;
+
 	private:
 
 		Optional<HLSL> m_hlsl;
-		
+
 		Optional<MSL>  m_msl;
+
+		Optional<ESSL>  m_essl;
 	};
 }

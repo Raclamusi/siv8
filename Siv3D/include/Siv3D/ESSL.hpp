@@ -21,16 +21,16 @@ namespace s3d
 	class PixelShader;
 	class ShaderGroup;
 	class HLSL;
-	class ESSL;
+	class MSL;
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	MSL
+	//	ESSL
 	//
 	////////////////////////////////////////////////////////////////
 
-	/// @brief MSL (Metal Shading Language) ファイル
-	class MSL
+	/// @brief ESSL (OpenGL ES Shading Language) ファイル
+	class ESSL
 	{
 	public:
 
@@ -42,18 +42,12 @@ namespace s3d
 
 		/// @brief デフォルトコンストラクタ
 		[[nodiscard]]
-		MSL() = default;
+		ESSL() = default;
 
-		/// @brief エントリーポイントで MSL を指定します。
-		/// @param entryPoint エントリーポイント
+		/// @brief ファイルパスで ESSL を指定します。
+		/// @param path ESSL ファイルのパス
 		[[nodiscard]]
-		explicit MSL(String entryPoint);
-
-		/// @brief ファイルパスとエントリーポイントで MSL を指定します。
-		/// @param path MSL ファイルのパス
-		/// @param entryPoint エントリーポイント
-		[[nodiscard]]
-		MSL(FilePath path, String entryPoint);
+		ESSL(FilePath path);
 
 		////////////////////////////////////////////////////////////////
 		//
@@ -65,7 +59,7 @@ namespace s3d
 		ShaderGroup operator |(const HLSL& hlsl) const;
 
 		[[nodiscard]]
-		ShaderGroup operator |(const ESSL& essl) const;
+		ShaderGroup operator |(const MSL& msl) const;
 
 		////////////////////////////////////////////////////////////////
 		//
@@ -73,7 +67,7 @@ namespace s3d
 		//
 		////////////////////////////////////////////////////////////////
 
-		/// @brief MSL から頂点シェーダを作成します。
+		/// @brief ESSL から頂点シェーダを作成します。
 		[[nodiscard]]
 		operator VertexShader() const;
 
@@ -83,7 +77,7 @@ namespace s3d
 		//
 		////////////////////////////////////////////////////////////////
 
-		/// @brief MSL からピクセルシェーダを作成します。
+		/// @brief ESSL からピクセルシェーダを作成します。
 		[[nodiscard]]
 		operator PixelShader() const;
 
@@ -93,23 +87,16 @@ namespace s3d
 		//
 		////////////////////////////////////////////////////////////////
 
-		static MSL FromSource(std::string source);
+		static ESSL FromSource(std::string source);
 
-		static MSL FromSource(std::string source, StringView entryPoint);
-
-		static MSL FromSource(StringView source);
-
-		static MSL FromSource(StringView source, StringView entryPoint);
+		static ESSL FromSource(StringView source);
 
 	private:
 
-		/// @brief MSL ファイルのパス
+		/// @brief ESSL ファイルのパス
 		FilePath m_path;
 
-		/// @brief エントリーポイント
-		String m_entryPoint;
-
-		/// @brief MSL ソースコード
+		/// @brief ESSL ソースコード
 		std::string m_source;
 	};
 }

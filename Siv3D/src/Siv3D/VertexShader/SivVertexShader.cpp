@@ -202,4 +202,40 @@ namespace s3d
 
 		return VertexShader{ source, entryPoint };
 	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	ESSL
+	//
+	////////////////////////////////////////////////////////////////
+
+	VertexShader VertexShader::ESSL(const FilePathView path)
+	{
+		//if (System::GetRendererType() != EngineOption::Renderer::OpenGLES3)
+		//{
+		//	throw Error{ "ESSL must be used with EngineOption::Renderer::OpenGLES3" };
+		//}
+
+		return VertexShader{ path, U"main" };
+	}
+
+	VertexShader VertexShader::ESSL(std::unique_ptr<IReader> reader)
+	{
+		//if (System::GetRendererType() != EngineOption::Renderer::OpenGLES3)
+		//{
+		//	throw Error{ "ESSL must be used with EngineOption::Renderer::OpenGLES3" };
+		//}
+
+		return VertexShader{ std::move(reader), U"main" };
+	}
+
+	VertexShader VertexShader::ESSL(const std::string& source)
+	{
+		//if (System::GetRendererType() != EngineOption::Renderer::OpenGLES3)
+		//{
+		//	throw Error{ "ESSL must be used with EngineOption::Renderer::OpenGLES3" };
+		//}
+	
+		return VertexShader{ source, U"main" };
+	}
 }

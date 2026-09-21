@@ -36,4 +36,16 @@ namespace s3d
 	{
 		return PixelShader{ std::make_unique<Reader>(std::forward<Reader>(reader)), entryPoint };
 	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	ESSL
+	//
+	////////////////////////////////////////////////////////////////
+
+	template <ReaderObject Reader>
+	PixelShader PixelShader::ESSL(Reader&& reader)
+	{
+		return PixelShader{ std::make_unique<Reader>(std::forward<Reader>(reader)), U"main" };
+	}
 }
