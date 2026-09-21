@@ -1,0 +1,2165 @@
+﻿//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
+# include "CRenderer2D_GLES3.hpp"
+# include <Siv3D/Blob.hpp>
+# include <Siv3D/ScopeExit.hpp>
+# include <Siv3D/Resource.hpp>
+# include <Siv3D/Mat3x2.hpp>
+# include <Siv3D/Mat3x3.hpp>
+# include <Siv3D/LineStyle.hpp>
+# include <Siv3D/FloatQuad.hpp>
+# include <Siv3D/Pattern/PatternParameters.hpp>
+# include <Siv3D/Renderer2D/Vertex2DBuilder.hpp>
+# include <Siv3D/Error/InternalEngineError.hpp>
+# include <Siv3D/EngineShader/IEngineShader.hpp>
+# include <Siv3D/Texture/GLES3/CTexture_GLES3.hpp>
+# include <Siv3D/Profiler/IProfiler.hpp>
+# include <Siv3D/Engine/Siv3DEngine.hpp>
+# include <Siv3D/FmtOptional.hpp>
+# include <Siv3D/EngineLog.hpp>
+
+/*
+#	define LOG_COMMAND(...) LOG_TRACE(__VA_ARGS__)
+/*/
+#	define LOG_COMMAND(...) ((void)0)
+//*/
+
+namespace s3d
+{
+	PixelShader::IDType CRenderer2D_GLES3::EngineShader::getPatternShader(const PatternType pattern) const noexcept
+	{
+		switch (pattern)
+		{
+		case PatternType::PolkaDot:
+			return psPatternPolkaDot;
+		case PatternType::Stripe:
+			return psPatternStripe;
+		case PatternType::Checker:
+			return psPatternChecker;
+		case PatternType::Grid:
+			return psPatternGrid;
+		case PatternType::Triangle:
+			return psPatternTriangle;
+		case PatternType::HexGrid:
+			return psPatternHexGrid;
+		default:
+			return psShape;
+		}
+	}
+
+	struct CommandState
+	{
+		BatchInfo2D batchInfo;
+
+		RasterizerState rasterizerState = RasterizerState::Default2D;
+
+		Optional<Rect> scissorRect;
+
+		Mat3x2 transform = Mat3x2::Identity();
+
+		Mat3x2 screenMat = Mat3x2::Identity();
+	};
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	(destructor)
+	//
+	////////////////////////////////////////////////////////////////
+
+	CRenderer2D_GLES3::~CRenderer2D_GLES3()
+	{
+		LOG_SCOPED_DEBUG("CRenderer2D_GLES3::~CRenderer2D_GLES3()");
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	init
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::init()
+	{
+		LOG_SCOPED_DEBUG("CRenderer2D_GLES3::init()");
+
+		// 各種ポインタを保存
+		{
+			m_pRenderer	= static_cast<CRenderer_GLES3*>(SIV3D_ENGINE(Renderer));
+			m_pShader	= static_cast<CShader_GLES3*>(SIV3D_ENGINE(Shader));
+			m_pTexture	= static_cast<CTexture_GLES3*>(SIV3D_ENGINE(Texture));
+		}
+
+		if (not m_vertexBufferManager2D.init())
+		{
+			throw InternalEngineError{ "GLES3VertexBufferManager2D::init() failed" };
+		}
+
+		m_engineShader.vsShape				= SIV3D_ENGINE(EngineShader)->getVS(EngineVS::Shape2D).id();
+		m_engineShader.vsQuadWarp			= SIV3D_ENGINE(EngineShader)->getVS(EngineVS::QuadWarp).id();
+		m_engineShader.psShape				= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::Shape2D).id();
+		m_engineShader.psTexture			= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::Texture2D).id();
+		m_engineShader.psQuadWarp			= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::QuadWarp).id();
+		m_engineShader.psLineDot			= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::LineDot).id();
+		m_engineShader.psLineDash			= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::LineDash).id();
+		m_engineShader.psLineLongDash		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::LineLongDash).id();
+		m_engineShader.psLineDashDot		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::LineDashDot).id();
+		m_engineShader.psLineRoundDot		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::LineRoundDot).id();
+		m_engineShader.psPatternPolkaDot	= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternPolkaDot).id();
+		m_engineShader.psPatternStripe		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternStripe).id();
+		m_engineShader.psPatternGrid		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternGrid).id();
+		m_engineShader.psPatternChecker		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternChecker).id();
+		m_engineShader.psPatternTriangle	= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternTriangle).id();
+		m_engineShader.psPatternHexGrid		= SIV3D_ENGINE(EngineShader)->getPS(EnginePS::PatternHexGrid).id();
+
+		// シャドウ画像を作成
+		{
+			const Image boxShadowImage{ Resource(U"engine/texture/box-shadow/256.png") };
+
+			const Array<Image> boxShadowImageMips =
+			{
+				Image{ Resource(U"engine/texture/box-shadow/128.png") },
+				Image{ Resource(U"engine/texture/box-shadow/64.png") },
+				Image{ Resource(U"engine/texture/box-shadow/32.png") },
+				Image{ Resource(U"engine/texture/box-shadow/16.png") },
+				Image{ Resource(U"engine/texture/box-shadow/8.png") },
+			};
+
+			m_shadowTexture = std::make_unique<Texture>(boxShadowImage, boxShadowImageMips);
+
+			if (m_shadowTexture->isEmpty())
+			{
+				throw InternalEngineError{ "Failed to create a box-shadow texture" };
+			}
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addLine
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addLine(const LineCap startCap, const LineCap endCap, const Float2& start, const Float2& end, float thickness, const Float4(&colors)[2])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLine(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, endCap, start, end, thickness, colors, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addLine(const LineStyle& style, const Float2& start, const Float2& end, float thickness, const Float4(&colors)[2])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLine(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), style, start, end, thickness, colors, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				switch (style.type)
+				{
+				case LineType::Solid:
+					m_commandManager.pushEnginePS(m_engineShader.psShape);
+					break;
+				case LineType::Dotted:
+					m_commandManager.pushEnginePS(m_engineShader.psLineDot);
+					break;
+				case LineType::Dashed:
+					m_commandManager.pushEnginePS(m_engineShader.psLineDash);
+					break;
+				case LineType::LongDash:
+					m_commandManager.pushEnginePS(m_engineShader.psLineLongDash);
+					break;
+				case LineType::DashDot:
+					m_commandManager.pushEnginePS(m_engineShader.psLineDashDot);
+					break;
+				case LineType::RoundDot:
+					m_commandManager.pushEnginePS(m_engineShader.psLineRoundDot);
+					break;
+				}
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addArrow
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addArrow(LineCap startCap, const Float2& start, const Float2& end, float thickness, const Float2& headSize, const Float4(&colors)[2])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildArrow(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, start, end, thickness, headSize, colors, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addTriangle
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addTriangle(const Float2(&points)[3], const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTriangle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), points, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addTriangle(const Float2(&points)[3], const Float4(&colors)[3])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTriangle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), points, colors))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addTriangle(const Float2(&points)[3], const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTriangle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), points, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRect
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRect(const FloatRect& rect, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRect(const FloatRect& rect, const Float4(&colors)[4])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, colors))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRect(const FloatRect& rect, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRectFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRectFrame(const FloatRect& innerRect, const float thickness, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRectFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), innerRect, thickness, colorType, color0, color1))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRectFrame(const FloatRect& innerRect, const float thickness, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRectFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), innerRect, thickness, ColorFillDirection::InOut, pattern.primaryColor, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRectDashedFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRectDashedFrame(const FloatRect& innerRect, const float offset, const float thickness, const float dashRatio, const uint32 dashCount, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRectDashedFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), innerRect, offset, thickness, dashRatio, dashCount, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircle
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircle(const Float2& center, const float r, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addCircle(const Float2& center, const float r, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, ColorFillDirection::InOut, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircleFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircleFrame(const Float2& center, const float rInner, const float thickness, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, rInner, thickness, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addCircleFrame(const Float2& center, const float rInner, const float thickness, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, rInner, thickness, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircleDashedFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircleDashedFrame(const Float2& center, const float rInner, const float startAngle, const float thickness, const float dashRatio, const uint32 dashCount, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleDashedFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, rInner, startAngle, thickness, dashRatio, dashCount, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCirclePie
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCirclePie(const Float2& center, const float r, const float startAngle, const float angle, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCirclePie(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, startAngle, angle, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addCirclePie(const Float2& center, const float r, const float startAngle, const float angle, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCirclePie(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, startAngle, angle, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircleArc
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircleArc(const LineCap lineCap, const Float2& center, const float rInner, const float startAngle, const float angle, const float thickness, const Float4& color0, const Float4& color1, ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleArc(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), lineCap, center, rInner, startAngle, angle, thickness, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addCircleArc(const LineCap lineCap, const Float2& center, const float rInner, const float startAngle, const float angle, const float thickness, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleArc(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), lineCap, center, rInner, startAngle, angle, thickness, ColorFillDirection::InOut, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircleSegment
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircleSegment(const Float2& center, const float r, const float startAngle, const float angle, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleSegment(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, startAngle, angle, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addCircleSegment(const Float2& center, const float r, const float startAngle, const float angle, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleSegment(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, r, startAngle, angle, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addEllipse
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addEllipse(const Float2& center, const float a, const float b, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipse(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addEllipse(const Float2& center, const float a, const float b, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipse(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, ColorFillDirection::InOut, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addEllipseFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addEllipseFrame(const Float2& center, const float a, const float b, const float innerThickness, const float outerThickness, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipseFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, innerThickness, outerThickness, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addEllipseFrame(const Float2& center, const float a, const float b, const float innerThickness, const float outerThickness, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipseFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, innerThickness, outerThickness, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addEllipseDashedFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addEllipseDashedFrame(const Float2& center, const float a, const float b, const float innerThickness, const float outerThickness, const float offset, const float dashRatio, const uint32 dashCount, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipseDashedFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, innerThickness, outerThickness, offset, dashRatio, dashCount, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addEllipsePie
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addEllipsePie(const Float2& center, const float a, const float b, const float startAngle, const float angle, const Float4& innerColor, const Float4& outerColor)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipsePie(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, startAngle, angle, innerColor, outerColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addEllipsePie(const Float2& center, const float a, const float b, const float startAngle, const float angle, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildEllipsePie(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, startAngle, angle, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addSuperEllipse
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addSuperEllipse(const Float2& center, const float a, const float b, const float n, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildSuperEllipse(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, n, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addSuperEllipse(const Float2& center, const float a, const float b, const float n, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildSuperEllipse(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), center, a, b, n, ColorFillDirection::InOut, pattern.primaryColor, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addQuad
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addQuad(const FloatQuad& quad, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addQuad(const FloatQuad& quad, const Float4(&colors)[4])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, colors))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addQuad(const FloatQuad& quad, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRoundRect
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRoundRect(const FloatRect& rect, const float r, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, r, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRoundRect(const FloatRect& rect, const float r, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, r, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRoundRect(const FloatRect& rect, const float r, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, r, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRoundRectFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRoundRectFrame(const FloatRect& innerRect, const float innerR, const FloatRect& outerRect, const float outerR, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRectFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this),
+			innerRect, innerR, outerRect, outerR, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRoundRectFrame(const FloatRect& innerRect, const float innerR, const FloatRect& outerRect, const float outerR, const Float4& color0, const Float4& color1, const ColorFillDirection colorType)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRectFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this),
+			innerRect, innerR, outerRect, outerR, colorType, color0, color1, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addRoundRectFrame(const FloatRect& innerRect, const float innerR, const FloatRect& outerRect, const float outerR, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRectFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this),
+			innerRect, innerR, outerRect, outerR, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRoundRectDashedFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRoundRectDashedFrame(const FloatRect& innerRect, const float innerR, const FloatRect& outerRect, const float outerR, const float offset, const float dashRatio, const uint32 dashCount, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRectDashedFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this),
+			innerRect, innerR, outerRect, outerR, offset, dashRatio, dashCount, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addPolygon
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addPolygon(const std::span<const Float2> vertices, const std::span<const TriangleIndex> triangleIndices, const Optional<Float2>& offset, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygon(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, triangleIndices, offset, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addPolygon(const std::span<const Float2> vertices, const std::span<const TriangleIndex> triangleIndices, const Optional<Float2>& offset, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygon(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, triangleIndices, offset, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addPolygon(const std::span<const Float2> vertices, const std::span<const Vertex2D::IndexType> indices, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygon(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, indices, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addPolygon(const std::span<const Float2> vertices, const std::span<const Vertex2D::IndexType> indices, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygon(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, indices, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addPolygonTransformed
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addPolygonTransformed(const std::span<const Float2> vertices, const std::span<const TriangleIndex> triangleIndices, const float s, const float c, const Float2& offset, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygonTransformed(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, triangleIndices, s, c, offset, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addPolygonTransformed(const std::span<const Float2> vertices, const std::span<const TriangleIndex> triangleIndices, const float s, const float c, const Float2& offset, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildPolygonTransformed(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, triangleIndices, s, c, offset, pattern.primaryColor))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addShape2DFrame
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addShape2DFrame(const std::span<const Float2> vertices, const Optional<Float2>& offset, const float thickness, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildShape2DFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, offset, thickness, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addShape2DFrame(const std::span<const Float2> vertices, const Optional<Float2>& offset, const float thickness, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildShape2DFrame(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, offset, thickness, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addLineString
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addLineString(const LineCap startCap, const LineCap endCap, const std::span<const Vec2> points, const Optional<Float2>& offset, const float thickness, const bool inner, const CloseRing closeRing, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLineString(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, endCap, points, offset, thickness, inner, closeRing, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addLineString(const LineCap startCap, const LineCap endCap, const std::span<const Vec2> points, const Optional<Float2>& offset, const float thickness, const bool inner, const Float4& colorStart, const Float4& colorEnd)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLineString(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, endCap, points, offset, thickness, inner, colorStart, colorEnd, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addLineString(const LineCap startCap, const LineCap endCap, const std::span<const Vec2> points, const Optional<Float2>& offset, const float thickness, const bool inner, const CloseRing closeRing, const PatternParameters& pattern)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLineString(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, endCap, points, offset, thickness, inner, closeRing, pattern.primaryColor, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.getPatternShader(pattern.type));
+			}
+
+			m_commandManager.pushPatternParameter(pattern.toFloat4Array(1.0f / getMaxScaling()));
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addLineString(const LineCap startCap, const LineCap endCap, const std::span<const Vec2> points, const Optional<Float2>& offset, const float thickness, const bool inner, const CloseRing closeRing, const std::span<const ColorF> colors)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildLineString(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), startCap, endCap, points, offset, thickness, inner, closeRing, colors, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addTexturedCircle
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addTexturedCircle(const Texture& texture, const Circle& circle, const FloatRect& uv, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedCircle(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), circle, uv, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addTexturedQuad
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addTexturedQuad(const Texture& texture, const FloatQuad& quad, const FloatRect& uv, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, uv, color))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addTexturedQuad(const Texture& texture, const FloatQuad& quad, const FloatRect& uv, const Float4(&colors)[4])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, uv, colors))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addTexturedRoundRect
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addTexturedRoundRect(const Texture& texture, const FloatRect& rect, const float w, const float h, const float r, const FloatRect& uvRect, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedRoundRect(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, w, h, r, uvRect, color, getMaxScaling()))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addCircleShadow
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addCircleShadow(const Circle& circle, const float blur, const Float4& color, const bool fill)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildCircleShadow(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), circle, blur, color, getMaxScaling(), fill))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, getShadowTexture());
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRectShadow
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRectShadow(const FloatRect& rect, const float blur, const Float4& color, const bool fill)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRectShadow(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), rect, blur, color, fill))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, getShadowTexture());
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addRoundRectShadow
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addRoundRectShadow(const RoundRect& roundRect, const float blur, const Float4& color, const bool fill)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildRoundRectShadow(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), roundRect, blur, color, getMaxScaling(), fill))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, getShadowTexture());
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addMesh2D
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addMesh2D(const std::span<const Vertex2D> vertices, const std::span<const TriangleIndex> indices, const Optional<Float2>& offset)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildMesh2D(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, indices, offset))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psShape);
+			}
+
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addMesh2D(const Texture& texture, const std::span<const Vertex2D> vertices, const std::span<const TriangleIndex> indices, const Optional<Float2>& offset)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildMesh2D(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), vertices, indices, offset))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsShape);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psTexture);
+			}
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	addQuadWarp
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::addQuadWarp(const Texture& texture, const FloatRect& uv, const FloatQuad& quad, const Float4& color)
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, uv, color))
+		{
+			m_commandManager.pushEngineVS(m_engineShader.vsQuadWarp);
+			m_commandManager.pushEnginePS(m_engineShader.psQuadWarp);
+
+			const std::array<Float4, 3> quadWarpParams =
+			{
+				Float4{ quad.p[0], quad.p[1] },
+				Float4{ quad.p[2], quad.p[3] },
+				Float4{ (uv.right - uv.left), (uv.bottom - uv.top), uv.left, uv.top }
+			};
+			m_commandManager.pushQuadWarpParameter(quadWarpParams);
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	void CRenderer2D_GLES3::addQuadWarp(const Texture& texture, const FloatRect& uv, const FloatQuad& quad, const Float4(&colors)[4])
+	{
+		if (const auto indexCount = Vertex2DBuilder::BuildTexturedQuad(std::bind_front(&CRenderer2D_GLES3::createBuffer, this), quad, uv, colors))
+		{
+			if (not m_currentCustomShader.vs)
+			{
+				m_commandManager.pushEngineVS(m_engineShader.vsQuadWarp);
+			}
+
+			if (not m_currentCustomShader.ps)
+			{
+				m_commandManager.pushEnginePS(m_engineShader.psQuadWarp);
+			}
+
+			const std::array<Float4, 3> quadWarpParams =
+			{
+				Float4{ quad.p[0], quad.p[1] },
+				Float4{ quad.p[2], quad.p[3] },
+				Float4{ (uv.right - uv.left), (uv.bottom - uv.top), uv.left, uv.top }
+			};
+			m_commandManager.pushQuadWarpParameter(quadWarpParams);
+
+			m_commandManager.pushPSTexture(0, texture);
+			m_commandManager.pushDraw(indexCount);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	flush
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::flush()
+	{
+		ScopeExit cleanUp = [this]()
+		{
+			m_vertexBufferManager2D.reset();
+			m_commandManager.reset();
+			m_currentCustomShader.vs.reset();
+			m_currentCustomShader.ps.reset();
+		};
+
+		struct Stat
+		{
+			uint32 drawCalls = 0;
+			uint32 triangleCount = 0;
+		} stat;
+
+		m_commandManager.flush();
+		m_pShader->usePipeline();
+		m_pShader->setConstantBufferVS(0, m_vsConstants._base());
+		m_pShader->setConstantBufferPS(0, m_psConstants._base());
+		m_pShader->setConstantBufferPS(1, m_psEffectConstants._base());
+
+		const Size currentRenderTargetSize = SIV3D_ENGINE(Renderer)->getSceneBufferSize();
+		::glViewport(0, 0, currentRenderTargetSize.x, currentRenderTargetSize.y);
+
+		m_pRenderer->getBackBuffer().bindSceneTextureAsRenderTarget();
+		m_pRenderer->getDepthStencilState().set(DepthStencilState::Default2D);
+
+		LOG_COMMAND("----");
+
+		CommandState commandState;
+		commandState.screenMat = Mat3x2::Screen(currentRenderTargetSize);
+
+		for (const auto& command : m_commandManager.getCommands())
+		{
+			switch (command.type)
+			{
+			case GLES3Renderer2DCommandType::Null:
+				{
+					LOG_COMMAND("Null");
+					break;
+				}
+			case GLES3Renderer2DCommandType::SetBuffers:
+				{
+					m_vertexBufferManager2D.setBuffers();
+					LOG_COMMAND(fmt::format("SetBuffers[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::UpdateBuffers:
+				{
+					commandState.batchInfo = m_vertexBufferManager2D.commitBuffers(command.index);
+					LOG_COMMAND(fmt::format("UpdateBuffers[{}] BatchInfo(indexCount = {}, startIndexLocation = {}, baseVertexLocation = {})",
+						command.index, commandState.batchInfo.indexCount, commandState.batchInfo.startIndexLocation, commandState.batchInfo.baseVertexLocation));
+					break;
+				}
+			case GLES3Renderer2DCommandType::Draw:
+				{
+					m_vsConstants._update_if_dirty();
+					m_psConstants._update_if_dirty();
+					m_psEffectConstants._update_if_dirty();
+
+					const GLES3DrawCommand& draw = m_commandManager.getDraw(command.index);
+					const uint32 indexCount = draw.indexCount;
+					const uint32 startIndexLocation = commandState.batchInfo.startIndexLocation;
+					// const uint32 baseVertexLocation = commandState.batchInfo.baseVertexLocation;
+					constexpr Vertex2D::IndexType* pBase = 0;
+
+					::glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_SHORT, (pBase + startIndexLocation));
+					commandState.batchInfo.startIndexLocation += indexCount;
+
+					++stat.drawCalls;
+					stat.triangleCount += (indexCount / 3);
+					LOG_COMMAND(fmt::format("Draw[{}] indexCount = {}, startIndexLocation = {}", command.index, indexCount, startIndexLocation));
+					break;
+				}
+			case GLES3Renderer2DCommandType::ColorMul:
+				{
+					const Float4 colorMul = m_commandManager.getColorMul(command.index);
+					m_vsConstants->colorMul = colorMul;
+					m_psConstants->patternBackgroundColorMul = colorMul;
+					LOG_COMMAND(fmt::format("ColorMul[{}] {}", command.index, colorMul));
+					break;
+				}
+			case GLES3Renderer2DCommandType::ColorAdd:
+				{
+					const Float3 colorAdd = m_commandManager.getColorAdd(command.index);
+					m_psConstants->colorAdd.set(colorAdd, 0.0f);
+					LOG_COMMAND(fmt::format("ColorAdd[{}] {}", command.index, colorAdd));
+					break;
+				}
+			case GLES3Renderer2DCommandType::QuadWarpParameters:
+				{
+					const auto& quadWarpParameter = m_commandManager.getQuadWarpParameter(command.index);
+					const Quad quad{ quadWarpParameter[0].xy(), quadWarpParameter[0].zw(), quadWarpParameter[1].xy(), quadWarpParameter[1].zw() };
+					const Mat3x3 mat = Mat3x3::Homography(quad).inverse();
+					m_psEffectConstants->setQuadWarp(mat, quadWarpParameter[2]);
+					LOG_COMMAND(fmt::format("QuadWarpParameters[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::PatternParameters:
+				{
+					const auto& patternParameter = m_commandManager.getPatternParameter(command.index);
+					m_psEffectConstants->setPattern(patternParameter);
+					LOG_COMMAND(fmt::format("PatternParameters[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::BlendState:
+				{
+					const auto& blendState = m_commandManager.getBlendState(command.index);
+					m_pRenderer->getBlendState().set(blendState);
+					LOG_COMMAND(fmt::format("BlendState[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::RasterizerState:
+				{
+					const auto& rasterizerState = m_commandManager.getRasterizerState(command.index);
+					commandState.rasterizerState = rasterizerState;
+
+					if (commandState.scissorRect)
+					{
+						m_pRenderer->getRasterizerState().set(rasterizerState, true);
+					}
+					else
+					{
+						m_pRenderer->getRasterizerState().set(rasterizerState, false);
+					}
+
+					LOG_COMMAND(fmt::format("RasterizerState[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::VSSamplerState0:
+			case GLES3Renderer2DCommandType::VSSamplerState1:
+			case GLES3Renderer2DCommandType::VSSamplerState2:
+			case GLES3Renderer2DCommandType::VSSamplerState3:
+			case GLES3Renderer2DCommandType::VSSamplerState4:
+			case GLES3Renderer2DCommandType::VSSamplerState5:
+			case GLES3Renderer2DCommandType::VSSamplerState6:
+			case GLES3Renderer2DCommandType::VSSamplerState7:
+				{
+					const uint32 slot = FromEnum(command.type) - FromEnum(GLES3Renderer2DCommandType::VSSamplerState0);
+					const auto& samplerState = m_commandManager.getVSSamplerState(slot, command.index);
+					m_pRenderer->getSamplerState().setVS(slot, samplerState);
+					LOG_COMMAND(fmt::format("VSSamplerState{}[{}] ", slot, command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::PSSamplerState0:
+			case GLES3Renderer2DCommandType::PSSamplerState1:
+			case GLES3Renderer2DCommandType::PSSamplerState2:
+			case GLES3Renderer2DCommandType::PSSamplerState3:
+			case GLES3Renderer2DCommandType::PSSamplerState4:
+			case GLES3Renderer2DCommandType::PSSamplerState5:
+			case GLES3Renderer2DCommandType::PSSamplerState6:
+			case GLES3Renderer2DCommandType::PSSamplerState7:
+				{
+					const uint32 slot = FromEnum(command.type) - FromEnum(GLES3Renderer2DCommandType::PSSamplerState0);
+					const auto& samplerState = m_commandManager.getPSSamplerState(slot, command.index);
+					m_pRenderer->getSamplerState().setPS(slot, samplerState);
+					LOG_COMMAND(fmt::format("PSSamplerState{}[{}] ", slot, command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::ScissorRect:
+				{
+					const auto& scissorRect = m_commandManager.getScissorRect(command.index);
+					commandState.scissorRect = scissorRect;
+
+					if (scissorRect)
+					{
+						m_pRenderer->getRasterizerState().set(commandState.rasterizerState, true);
+						m_pRenderer->getRasterizerState().setScissorRect(*scissorRect);
+					}
+					else
+					{
+						m_pRenderer->getRasterizerState().set(commandState.rasterizerState, false);
+					}
+
+					LOG_COMMAND(fmt::format("ScissorRect[{}] {}", command.index, scissorRect));
+					break;
+				}
+			case GLES3Renderer2DCommandType::Viewport:
+				{
+					const auto& viewport = m_commandManager.getViewport(command.index);
+
+					const Rect vp = (viewport ? *viewport : Rect{ 0, 0, currentRenderTargetSize });
+					::glViewport(vp.x, vp.y, vp.w, vp.h);
+
+					commandState.screenMat = Mat3x2::Screen(vp.w, vp.h);
+					const Mat3x2 matrix = (commandState.transform * commandState.screenMat);
+					m_vsConstants->transform[0].set(matrix._11, matrix._12, matrix._31, matrix._32);
+					m_vsConstants->transform[1].set(matrix._21, matrix._22, 0.0f, 1.0f);
+
+					LOG_COMMAND(fmt::format("Viewport[{}] ({}, {}, {}, {})", command.index, vp.x, vp.y, vp.w, vp.h));
+					break;
+				}
+			case GLES3Renderer2DCommandType::SDFParams:
+				{
+					const auto& sdfParameter = m_commandManager.getSDFParameters(command.index);
+					m_psConstants->setSDFParameters(sdfParameter);
+					LOG_COMMAND(fmt::format("SDFParams[{}]", command.index));
+					break;
+				}
+			case GLES3Renderer2DCommandType::SetVS:
+				{
+					const auto vsID = m_commandManager.getVS(command.index);
+
+					if (vsID == VertexShader::IDType::Invalid())
+					{
+						m_pShader->setVSNull();
+						LOG_COMMAND(fmt::format("SetVS[{}]: null", command.index));
+					}
+					else
+					{
+						m_pShader->setVS(vsID);
+						LOG_COMMAND(fmt::format("SetVS[{}]: {}", command.index, vsID.value()));
+					}
+
+					m_pShader->usePipeline();
+
+					break;
+				}
+			case GLES3Renderer2DCommandType::SetPS:
+				{
+					const auto psID = m_commandManager.getPS(command.index);
+
+					if (psID == PixelShader::IDType::Invalid())
+					{
+						m_pShader->setPSNull();
+						LOG_COMMAND(fmt::format("SetPS[{}]: null", command.index));
+					}
+					else
+					{
+						m_pShader->setPS(psID);
+						LOG_COMMAND(fmt::format("SetPS[{}]: {}", command.index, psID.value()));
+					}
+
+					m_pShader->usePipeline();
+
+					break;
+				}
+			case GLES3Renderer2DCommandType::Transform:
+				{
+					commandState.transform = m_commandManager.getCombinedTransform(command.index);
+					const Mat3x2 matrix = (commandState.transform * commandState.screenMat);
+					m_vsConstants->transform[0].set(matrix._11, matrix._12, matrix._31, matrix._32);
+					m_vsConstants->transform[1].set(matrix._21, matrix._22, 0.0f, 1.0f);
+
+					LOG_COMMAND(fmt::format("Transform[{}] {}", command.index, matrix));
+					break;
+				}
+			case GLES3Renderer2DCommandType::VSTexture0:
+			case GLES3Renderer2DCommandType::VSTexture1:
+			case GLES3Renderer2DCommandType::VSTexture2:
+			case GLES3Renderer2DCommandType::VSTexture3:
+			case GLES3Renderer2DCommandType::VSTexture4:
+			case GLES3Renderer2DCommandType::VSTexture5:
+			case GLES3Renderer2DCommandType::VSTexture6:
+			case GLES3Renderer2DCommandType::VSTexture7:
+				{
+					const uint32 slot = (FromEnum(command.type) - FromEnum(GLES3Renderer2DCommandType::VSTexture0));
+					const auto& textureID = m_commandManager.getVSTexture(slot, command.index);
+
+					if (textureID.isInvalid())
+					{
+						::glActiveTexture(GL_TEXTURE0 + MakeSamplerSlot(ShaderStage::Vertex, slot));
+						::glBindTexture(GL_TEXTURE_2D, 0);
+						LOG_COMMAND(fmt::format("VSTexture{}[{}]: null", slot, command.index));
+					}
+					else
+					{
+						::glActiveTexture(GL_TEXTURE0 + MakeSamplerSlot(ShaderStage::Vertex, slot));
+						::glBindTexture(GL_TEXTURE_2D, m_pTexture->getTexture(textureID));
+						LOG_COMMAND(fmt::format("VSTexture{}[{}]: {}", slot, command.index, textureID.value()));
+					}
+
+					break;
+				}
+			case GLES3Renderer2DCommandType::PSTexture0:
+			case GLES3Renderer2DCommandType::PSTexture1:
+			case GLES3Renderer2DCommandType::PSTexture2:
+			case GLES3Renderer2DCommandType::PSTexture3:
+			case GLES3Renderer2DCommandType::PSTexture4:
+			case GLES3Renderer2DCommandType::PSTexture5:
+			case GLES3Renderer2DCommandType::PSTexture6:
+			case GLES3Renderer2DCommandType::PSTexture7:
+				{
+					const uint32 slot = (FromEnum(command.type) - FromEnum(GLES3Renderer2DCommandType::PSTexture0));
+					const auto& textureID = m_commandManager.getPSTexture(slot, command.index);
+
+					if (textureID.isInvalid())
+					{
+						::glActiveTexture(GL_TEXTURE0 + MakeSamplerSlot(ShaderStage::Pixel, slot));
+						::glBindTexture(GL_TEXTURE_2D, 0);
+						LOG_COMMAND(fmt::format("PSTexture{}[{}]: null", slot, command.index));
+					}
+					else
+					{
+						::glActiveTexture(GL_TEXTURE0 + MakeSamplerSlot(ShaderStage::Pixel, slot));
+						::glBindTexture(GL_TEXTURE_2D, m_pTexture->getTexture(textureID));
+						LOG_COMMAND(fmt::format("PSTexture{}[{}]: {}", slot, command.index, textureID.value()));
+					}
+
+					break;
+				}
+			}
+		}
+
+		::glBindVertexArray(0);
+
+		CheckOpenGLError();
+
+		SIV3D_ENGINE(Profiler)->reportStat(ProfilerStat::Renderer2D_DrawCalls, stat.drawCalls);
+		SIV3D_ENGINE(Profiler)->reportStat(ProfilerStat::Renderer2D_TriangleCount, stat.triangleCount);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getColorMul, setColorMul
+	//
+	////////////////////////////////////////////////////////////////
+
+	Float4 CRenderer2D_GLES3::getColorMul() const
+	{
+		return m_commandManager.getCurrentColorMul();
+	}
+
+	void CRenderer2D_GLES3::setColorMul(const Float4& color)
+	{
+		m_commandManager.pushColorMul(color);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getColorAdd, setColorAdd
+	//
+	////////////////////////////////////////////////////////////////
+
+	Float3 CRenderer2D_GLES3::getColorAdd() const
+	{
+		return m_commandManager.getCurrentColorAdd();
+	}
+
+	void CRenderer2D_GLES3::setColorAdd(const Float3& color)
+	{
+		m_commandManager.pushColorAdd(color);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getBlendState, setBlendState
+	//
+	////////////////////////////////////////////////////////////////
+
+	BlendState CRenderer2D_GLES3::getBlendState() const
+	{
+		return m_commandManager.getCurrentBlendState();
+	}
+
+	void CRenderer2D_GLES3::setBlendState(const BlendState& state)
+	{
+		m_commandManager.pushBlendState(state);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getRasterizerState, setRasterizerState
+	//
+	////////////////////////////////////////////////////////////////
+
+	RasterizerState CRenderer2D_GLES3::getRasterizerState() const
+	{
+		return m_commandManager.getCurrentRasterizerState();
+	}
+
+	void CRenderer2D_GLES3::setRasterizerState(const RasterizerState& state)
+	{
+		m_commandManager.pushRasterizerState(state);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getVSSamplerState, setVSSamplerState
+	//
+	////////////////////////////////////////////////////////////////
+
+	SamplerState CRenderer2D_GLES3::getVSSamplerState(const uint32 slot) const
+	{
+		return m_commandManager.getCurrentVSSamplerState(slot);
+	}
+
+	void CRenderer2D_GLES3::setVSSamplerState(const uint32 slot, const SamplerState& state)
+	{
+		m_commandManager.pushVSSamplerState(state, slot);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getPSSamplerState, setPSSamplerState
+	//
+	////////////////////////////////////////////////////////////////
+
+	SamplerState CRenderer2D_GLES3::getPSSamplerState(const uint32 slot) const
+	{
+		return m_commandManager.getCurrentPSSamplerState(slot);
+	}
+
+	void CRenderer2D_GLES3::setPSSamplerState(const uint32 slot, const SamplerState& state)
+	{
+		m_commandManager.pushPSSamplerState(state, slot);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getScissorRect, setScissorRect
+	//
+	////////////////////////////////////////////////////////////////
+
+	Optional<Rect> CRenderer2D_GLES3::getScissorRect() const
+	{
+		return m_commandManager.getCurrentScissorRect();
+	}
+
+	void CRenderer2D_GLES3::setScissorRect(const Optional<Rect>& rect)
+	{
+		m_commandManager.pushScissorRect(rect);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getViewport, setViewport
+	//
+	////////////////////////////////////////////////////////////////
+
+	Optional<Rect> CRenderer2D_GLES3::getViewport() const
+	{
+		return m_commandManager.getCurrentViewport();
+	}
+
+	void CRenderer2D_GLES3::setViewport(const Optional<Rect>& viewport)
+	{
+		m_commandManager.pushViewport(viewport);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	setSDFParameters
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CRenderer2D_GLES3::setSDFParameters(const std::array<Float4, 3>& params)
+	{
+		m_commandManager.pushSDFParameters(params);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getCustomVS, setCustomVS
+	//
+	////////////////////////////////////////////////////////////////
+
+	Optional<VertexShader> CRenderer2D_GLES3::getCustomVS() const
+	{
+		return m_currentCustomShader.vs;
+	}
+
+	void CRenderer2D_GLES3::setCustomVS(const Optional<VertexShader>& vs)
+	{
+		if (vs && (not vs->isEmpty()))
+		{
+			m_currentCustomShader.vs = *vs;
+			m_commandManager.pushCustomVS(*vs);
+		}
+		else
+		{
+			m_currentCustomShader.vs.reset();
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getCustomPS, setCustomPS
+	//
+	////////////////////////////////////////////////////////////////
+
+	Optional<PixelShader> CRenderer2D_GLES3::getCustomPS() const
+	{
+		return m_currentCustomShader.ps;
+	}
+
+	void CRenderer2D_GLES3::setCustomPS(const Optional<PixelShader>& ps)
+	{
+		if (ps && (not ps->isEmpty()))
+		{
+			m_currentCustomShader.ps = *ps;
+			m_commandManager.pushCustomPS(*ps);
+		}
+		else
+		{
+			m_currentCustomShader.ps.reset();
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getLocalTransform, setLocalTransform
+	//
+	////////////////////////////////////////////////////////////////
+
+	const Mat3x2& CRenderer2D_GLES3::getLocalTransform() const
+	{
+		return m_commandManager.getCurrentLocalTransform();
+	}
+
+	void CRenderer2D_GLES3::setLocalTransform(const Mat3x2& matrix)
+	{
+		m_commandManager.pushLocalTransform(matrix);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getCameraTransform, setCameraTransform
+	//
+	////////////////////////////////////////////////////////////////
+
+	const Mat3x2& CRenderer2D_GLES3::getCameraTransform() const
+	{
+		return m_commandManager.getCurrentCameraTransform();
+	}
+
+	void CRenderer2D_GLES3::setCameraTransform(const Mat3x2& matrix)
+	{
+		m_commandManager.pushCameraTransform(matrix);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getMaxScaling
+	//
+	////////////////////////////////////////////////////////////////
+
+	float CRenderer2D_GLES3::getMaxScaling() const noexcept
+	{
+		return m_commandManager.getCurrentMaxScaling();
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getShadowTexture
+	//
+	////////////////////////////////////////////////////////////////
+
+	const Texture& CRenderer2D_GLES3::getShadowTexture() const noexcept
+	{
+		return *m_shadowTexture;
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	(private function)
+	//
+	////////////////////////////////////////////////////////////////
+
+	Vertex2DBufferPointer CRenderer2D_GLES3::createBuffer(const uint16 vertexCount, const uint32 indexCount)
+	{
+		return m_vertexBufferManager2D.requestBuffer(vertexCount, indexCount, m_commandManager);
+	}
+}

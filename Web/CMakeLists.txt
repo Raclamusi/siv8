@@ -74,8 +74,8 @@ set(SIV3D_THIRDPARTY_LIBRARIES
     $<INSTALL_INTERFACE:
     >
 )
-file(GLOB SIV3D_JSLIBS CONFIGURE_DEPENDS
-    "${SIV3D_DIR}/lib/Web/jslib/*.js"
+file(GLOB_RECURSE SIV3D_JSLIBS CONFIGURE_DEPENDS
+    "${SIV3D_DIR}/src/Siv3D-Platform/Web/Siv3D/*.js"
 )
 
 add_library(Siv3D STATIC
@@ -116,19 +116,19 @@ target_include_directories(Siv3D
 )
 target_link_options(Siv3D INTERFACE
     ${SIV3D_EXE_LINKER_FLAGS}
-    "$<BUILD_INTERFACE:--js-library=${CMAKE_CURRENT_BINARY_DIR}/Siv3D.js>"
-    "$<INSTALL_INTERFACE:--js-library=${CMAKE_INSTALL_LIBDIR}/Siv3D/Siv3D.js>"
+    "$<BUILD_INTERFACE:--js-library=${CMAKE_CURRENT_BINARY_DIR}/libSiv3D.js>"
+    "$<INSTALL_INTERFACE:--js-library=${CMAKE_INSTALL_LIBDIR}/Siv3D/libSiv3D.js>"
 )
 target_link_libraries(Siv3D INTERFACE
     ${SIV3D_THIRDPARTY_LIBRARIES}
 )
 
 add_custom_command(
-    OUTPUT Siv3D.js
-    COMMAND cat ${SIV3D_JSLIBS} > Siv3D.js
+    OUTPUT libSiv3D.js
+    COMMAND cat ${SIV3D_JSLIBS} > libSiv3D.js
     DEPENDS ${SIV3D_JSLIBS}
 )
-add_custom_target(Siv3DJSLib DEPENDS Siv3D.js)
+add_custom_target(Siv3DJSLib DEPENDS libSiv3D.js)
 add_dependencies(Siv3D Siv3DJSLib)
 
 install(
@@ -158,7 +158,7 @@ install(
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/Siv3D"
 )
 install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/Siv3D.js"
+    FILES "${CMAKE_CURRENT_BINARY_DIR}/libSiv3D.js"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/Siv3D"
 )
 

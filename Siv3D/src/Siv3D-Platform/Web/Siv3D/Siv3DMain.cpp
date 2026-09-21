@@ -27,13 +27,13 @@ namespace s3d::detail::init
 int main(int argc, char* argv[])
 {
 	using namespace s3d;
-	
+
 	std::clog << "Siv3D for Web\n";
-	
+
 	detail::init::InitCommandLines(argc, argv);
-	
+
 	Siv3DEngine engine;
-	
+
 	try
 	{
 		SIV3D_ENGINE(System)->init();
@@ -48,8 +48,8 @@ int main(int argc, char* argv[])
 	LOG_DEBUG("Main() ---");
 
 	Main();
-	
+
 	LOG_DEBUG("--- Main()");
-	
+
 	return GetExitCode();
 }

@@ -1,0 +1,21 @@
+﻿//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
+# include <Siv3D/IConstantBuffer.hpp>
+# include "GLES3/ConstantBuffer_GLES3.hpp"
+
+namespace s3d
+{
+	std::unique_ptr<IConstantBuffer> IConstantBuffer::Create(const size_t size)
+	{
+		return std::make_unique<ConstantBuffer_GLES3>(size);
+	}
+}

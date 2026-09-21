@@ -1,0 +1,315 @@
+﻿//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
+# include "CTexture_GLES3.hpp"
+# include <Siv3D/Error/InternalEngineError.hpp>
+# include <Siv3D/Engine/Siv3DEngine.hpp>
+# include <Siv3D/ImageFormat/BCnDecoder.hpp>
+
+namespace s3d
+{
+	////////////////////////////////////////////////////////////////
+	//
+	//	(destructor)
+	//
+	////////////////////////////////////////////////////////////////
+
+	CTexture_GLES3::~CTexture_GLES3()
+	{
+		LOG_SCOPED_DEBUG("CTexture_GLES3::~CTexture_GLES3()");
+
+		m_textures.destroy();
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	init
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CTexture_GLES3::init()
+	{
+		LOG_SCOPED_DEBUG("CTexture_GLES3::init()");
+
+		// null Texture を管理に登録
+		{
+			const Image image{ 16, Palette::Yellow };
+			const Array<Image> mipmaps = {
+				Image{ 8, Palette::Yellow }, Image{ 4, Palette::Yellow },
+				Image{ 2, Palette::Yellow }, Image{ 1, Palette::Yellow }
+			};
+
+			// null Texture を作成
+			auto nullTexture = std::make_unique<GLES3Texture>(image, mipmaps, TextureDesc::Mipmap);
+
+			if (not nullTexture->isInitialized()) // もし作成に失敗していたら
+			{
+				throw InternalEngineError{ "Failed to create a null texture" };
+			}
+
+			// 管理に登録
+			m_textures.setNullData(std::move(nullTexture));
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	create
+	//
+	////////////////////////////////////////////////////////////////
+
+	Texture::IDType CTexture_GLES3::create(std::unique_ptr<IReader> reader, FilePathView pathHint, const TextureDesc desc)
+	{
+		if (not reader)
+		{
+			return Texture::IDType::Null();
+		}
+
+		if (not reader->isOpen())
+		{
+			return Texture::IDType::Null();
+		}
+
+		const BCnDecoder bcnDecoder{};
+		const bool isBCn = bcnDecoder.getImageInfo(*reader).has_value();
+
+		if (isBCn)
+		{
+			return create(bcnDecoder.decodeNative(std::move(reader), desc.sRGB, pathHint));
+		}
+		else
+		{
+			const Image image{ std::move(reader) };
+			return create(image.size(), std::as_bytes(std::span{ image }), (desc.sRGB ? TextureFormat::R8G8B8A8_Unorm_SRGB : TextureFormat::R8G8B8A8_Unorm), desc);
+		}
+	}
+
+	Texture::IDType CTexture_GLES3::create(const Image& image, const Array<Image>& mipmaps, const TextureDesc desc)
+	{
+		if (not image)
+		{
+			return Texture::IDType::Null();
+		}
+
+		std::unique_ptr<GLES3Texture> texture;
+
+		if ((not desc.hasMipmap) || (image.size() == Size{ 1, 1 }) || mipmaps.isEmpty())
+		{
+			const TextureFormat format = (desc.sRGB ? TextureFormat::R8G8B8A8_Unorm_SRGB : TextureFormat::R8G8B8A8_Unorm);
+			texture = std::make_unique<GLES3Texture>(GLES3Texture::NoMipmap{}, image.size(), std::as_bytes(std::span{ image }), format, desc);
+		}
+		else
+		{
+			texture = std::make_unique<GLES3Texture>(image, mipmaps, desc);
+		}
+
+		if (not texture->isInitialized())
+		{
+			return Texture::IDType::Null();
+		}
+
+		const String info = texture->getDesc().toString();
+		return m_textures.add(std::move(texture), info);
+	}
+
+	Texture::IDType CTexture_GLES3::create(const Size& size, const std::span<const Byte> data, const TextureFormat& format, const TextureDesc desc)
+	{
+		if ((size.x <= 0) || (size.y <= 0))
+		{
+			return Texture::IDType::Null();
+		}
+
+		std::unique_ptr<GLES3Texture> texture;
+
+		if ((not desc.hasMipmap) || (size == Size{ 1, 1 }))
+		{
+			texture = std::make_unique<GLES3Texture>(GLES3Texture::NoMipmap{}, size, data, format, desc);
+		}
+		else
+		{
+			texture = std::make_unique<GLES3Texture>(GLES3Texture::GenerateMipmap{}, size, data, format, desc);
+		}
+
+		if (not texture->isInitialized())
+		{
+			return Texture::IDType::Null();
+		}
+
+		const String info = texture->getDesc().toString();
+		return m_textures.add(std::move(texture), info);
+	}
+
+	Texture::IDType CTexture_GLES3::create(const BCnData& bcnData)
+	{
+		if (not bcnData)
+		{
+			return Texture::IDType::Null();
+		}
+
+		std::unique_ptr<GLES3Texture> texture = std::make_unique<GLES3Texture>(bcnData);
+
+		if (not texture->isInitialized())
+		{
+			return Texture::IDType::Null();
+		}
+
+		const String info = texture->getDesc().toString();
+		return m_textures.add(std::move(texture), info);
+	}
+
+	Texture::IDType CTexture_GLES3::createDynamic(const Size& size, std::span<const Byte> data, const TextureFormat& format, const TextureDesc desc)
+	{
+		if ((size.x <= 0) || (size.y <= 0))
+		{
+			return Texture::IDType::Null();
+		}
+
+		std::unique_ptr<GLES3Texture> texture;
+
+		if ((not desc.hasMipmap) || (size == Size{ 1, 1 }))
+		{
+			texture = std::make_unique<GLES3Texture>(GLES3Texture::Dynamic{}, GLES3Texture::NoMipmap{}, size, data, format, desc);
+		}
+		else
+		{
+			texture = std::make_unique<GLES3Texture>(GLES3Texture::Dynamic{}, GLES3Texture::GenerateMipmap{}, size, data, format, desc);
+		}
+
+		if (not texture->isInitialized())
+		{
+			return Texture::IDType::Null();
+		}
+
+		const String info = texture->getDesc().toString();
+		return m_textures.add(std::move(texture), info);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	release
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CTexture_GLES3::release(const Texture::IDType handleID)
+	{
+		m_textures.erase(handleID);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getSize
+	//
+	////////////////////////////////////////////////////////////////
+
+	Size CTexture_GLES3::getSize(const Texture::IDType handleID)
+	{
+		return m_textures[handleID]->getDesc().size;
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getMipLevels
+	//
+	////////////////////////////////////////////////////////////////
+
+	uint32 CTexture_GLES3::getMipLevels(const Texture::IDType handleID)
+	{
+		return m_textures[handleID]->getDesc().mipLevels;
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getDesc
+	//
+	////////////////////////////////////////////////////////////////
+
+	TextureDesc CTexture_GLES3::getDesc(const Texture::IDType handleID)
+	{
+		const auto& desc = m_textures[handleID]->getDesc();
+		return{ desc.hasMipmap, desc.sRGB, desc.isSDF };
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getFormat
+	//
+	////////////////////////////////////////////////////////////////
+
+	TextureFormat CTexture_GLES3::getFormat(const Texture::IDType handleID)
+	{
+		return m_textures[handleID]->getDesc().format;
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	hasDepth
+	//
+	////////////////////////////////////////////////////////////////
+
+	bool CTexture_GLES3::hasDepth(const Texture::IDType handleID)
+	{
+		return m_textures[handleID]->hasDepth();
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	fill
+	//
+	////////////////////////////////////////////////////////////////
+
+	bool CTexture_GLES3::fill(const Texture::IDType handleID, const ColorF& color, const bool wait)
+	{
+		return m_textures[handleID]->fill(color, wait);
+	}
+
+	bool CTexture_GLES3::fill(const Texture::IDType handleID, const std::span<const Byte> src, const uint32 srcBytesPerRow, const bool wait)
+	{
+		return m_textures[handleID]->fill(src, srcBytesPerRow, wait);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	fillRegion
+	//
+	////////////////////////////////////////////////////////////////
+
+	bool CTexture_GLES3::fillRegion(const Texture::IDType handleID, const ColorF& color, const Rect& rect)
+	{
+		return m_textures[handleID]->fillRegion(color, rect);
+	}
+
+	bool CTexture_GLES3::fillRegion(const Texture::IDType handleID, const std::span<const Byte> src, const uint32 srcBytesPerRow, const Rect& rect, const bool wait)
+	{
+		return m_textures[handleID]->fillRegion(src, srcBytesPerRow, rect, wait);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	generateMips
+	//
+	////////////////////////////////////////////////////////////////
+
+	void CTexture_GLES3::generateMips(const Texture::IDType handleID)
+	{
+		m_textures[handleID]->generateMipmaps();
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getTexture
+	//
+	////////////////////////////////////////////////////////////////
+
+	GLuint CTexture_GLES3::getTexture(const Texture::IDType handleID)
+	{
+		return m_textures[handleID]->getTexture();
+	}
+}
