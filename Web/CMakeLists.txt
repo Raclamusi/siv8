@@ -51,6 +51,9 @@ set(SIV3D_PRIVATE_PREPROCESSOR_DEFINITIONS
 )
 set(SIV3D_EXE_LINKER_FLAGS
     -fexceptions
+    --use-port=harfbuzz
+    --use-port=libpng
+    --use-port=zlib
     -sUSE_GLFW=3
     -sFULL_ES3
     -sMIN_WEBGL_VERSION=2
@@ -63,15 +66,116 @@ file(GLOB_RECURSE SIV3D_INTERNAL_SOURCES CONFIGURE_DEPENDS
     "${SIV3D_DIR}/src/Siv3D-Platform/Web/Siv3D/*.cpp"
     "${SIV3D_DIR}/src/Siv3D-Platform/macOS_Linux/Siv3D/*.cpp"
 )
+set(SIV3D_ONIGURUMA_DIR "${SIV3D_DIR}/src/ThirdParty/Oniguruma")
+set(SIV3D_SKIA_DIR "${SIV3D_DIR}/src/ThirdParty/skia")
 file(GLOB_RECURSE SIV3D_THIRDPARTY_SOURCES CONFIGURE_DEPENDS
-    "${SIV3D_DIR}/src/ThirdParty/*.c"
-    "${SIV3D_DIR}/src/ThirdParty/*.cpp"
-    "${SIV3D_DIR}/src/ThirdParty/*.cc"
+    "${SIV3D_DIR}/src/ThirdParty/absl/*.cc"
+    "${SIV3D_DIR}/src/ThirdParty/bc7enc_rdo/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/double-conversion/*.cc"
+    "${SIV3D_DIR}/src/ThirdParty/easyexif/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/fmt/*.cc"
+    "${SIV3D_DIR}/src/ThirdParty/lunasvg/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/miniaudio/*.c"
+    "${SIV3D_DIR}/src/ThirdParty/msdfgen/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/muparser/*.cpp"
+    "${SIV3D_ONIGURUMA_DIR}/ascii.c"
+    "${SIV3D_ONIGURUMA_DIR}/onig_init.c"
+    "${SIV3D_ONIGURUMA_DIR}/reg*.c"
+    "${SIV3D_ONIGURUMA_DIR}/st.c"
+    "${SIV3D_ONIGURUMA_DIR}/unicode.c"
+    "${SIV3D_ONIGURUMA_DIR}/unicode_fold[1-3]_key.c"
+    "${SIV3D_ONIGURUMA_DIR}/unicode_unfold_key.c"
+    "${SIV3D_ONIGURUMA_DIR}/utf32_le.c"
+    # "${SIV3D_DIR}/src/ThirdParty/oscpack/ip/IpEndpointName.cpp"
+    # "${SIV3D_DIR}/src/ThirdParty/oscpack/ip/posix/*.cpp"
+    # "${SIV3D_DIR}/src/ThirdParty/oscpack/osc/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/PFFFT/*.c"
+    "${SIV3D_DIR}/src/ThirdParty/plutovg/*.c"
+    # "${SIV3D_DIR}/src/ThirdParty/serial_cpp/serial.cc"
+    # "${SIV3D_DIR}/src/ThirdParty/serial_cpp/impl/unix.cc"
+    "${SIV3D_DIR}/src/ThirdParty/simdutf/*.cpp"
+    "${SIV3D_SKIA_DIR}/modules/*.cc"
+    "${SIV3D_SKIA_DIR}/src/base/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/codec/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/colorfilters/SkBlendModeColorFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/colorfilters/SkColorFilterBase.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/colorfilters/SkComposeColorFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/colorfilters/SkRuntimeColorFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/colorfilters/SkWorkingFormatColorFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/imagefilters/SkBlendImageFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/imagefilters/SkBlurImageFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/imagefilters/SkCropImageFilter.cpp"
+    "${SIV3D_SKIA_DIR}/src/effects/SkBlenders.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkImage.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkImage_Base.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkImage_Lazy.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkImage_Raster.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkImage_RasterFactories.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkRescaleAndReadPixels.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkSurface.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkSurface_Base.cpp"
+    "${SIV3D_SKIA_DIR}/src/image/SkSurface_Raster.cpp"
+    "${SIV3D_SKIA_DIR}/src/opts/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/pathops/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/ports/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/sfnt/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/shaders/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/sksl/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/text/*.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkCharToGlyphCache.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkCustomTypeface.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkDashPath.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkJSON.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkJSONWriter.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkMatrix22.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkParse.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkPatchUtils.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkShadowUtils.cpp"
+    "${SIV3D_SKIA_DIR}/src/utils/SkTextUtils.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/toml11/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/wuffs/*.cpp"
+    "${SIV3D_DIR}/src/ThirdParty/zstd/*.c"
+)
+list(REMOVE_ITEM SIV3D_THIRDPARTY_SOURCES
+    "${SIV3D_SKIA_DIR}/src/base/SkBase64.cpp"
+    "${SIV3D_SKIA_DIR}/src/base/SkTime.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkAnnotation.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkATrace.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkClipStackDevice.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkDataTable.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkDistanceFieldGen.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkDocument.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkFontStream.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkMD5.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkOverdrawCanvas.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkSLTypeShared.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkTypeface_remote.cpp"
+    "${SIV3D_SKIA_DIR}/src/core/SkYUVMath.cpp"
+    "${SIV3D_SKIA_DIR}/src/ports/SkDebug_win.cpp"
+    "${SIV3D_SKIA_DIR}/src/ports/SkOSFile_win.cpp"
+    "${SIV3D_SKIA_DIR}/src/shaders/SkCoordClampShader.cpp"
+    "${SIV3D_SKIA_DIR}/src/shaders/SkGainmapShader.cpp"
+    "${SIV3D_SKIA_DIR}/src/shaders/SkPerlinNoiseShaderImpl.cpp"
+)
+set_source_files_properties(
+    "${SIV3D_SKIA_DIR}/src/core/SkWriteBuffer.cpp" PROPERTIES
+    COMPILE_DEFINITIONS SK_DISABLE_LEGACY_PNG_WRITEBUFFER
+)
+set_source_files_properties(
+    "${SIV3D_ONIGURUMA_DIR}/unicode.c" PROPERTIES
+    COMPILE_OPTIONS -Wno-missing-field-initializers
 )
 set(SIV3D_THIRDPARTY_LIBRARIES
     $<BUILD_INTERFACE:
+        "${SIV3D_DIR}/lib/Web/wasm/libjpeg-turbo/libturbojpeg.a"
+        "${SIV3D_DIR}/lib/Web/wasm/opencv/libopencv_core.a"
+        "${SIV3D_DIR}/lib/Web/wasm/opencv/libopencv_imgproc.a"
     >
     $<INSTALL_INTERFACE:
+        "${CMAKE_INSTALL_LIBDIR}/Siv3D/libjpeg-turbo/libturbojpeg.a"
+        "${CMAKE_INSTALL_LIBDIR}/Siv3D/opencv/libopencv_core.a"
+        "${CMAKE_INSTALL_LIBDIR}/Siv3D/opencv/libopencv_imgproc.a"
     >
 )
 file(GLOB_RECURSE SIV3D_JSLIBS CONFIGURE_DEPENDS
