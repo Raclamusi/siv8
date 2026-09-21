@@ -270,7 +270,8 @@ file(GLOB SIV3D_TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/../Test/*.cpp"
 )
 add_executable(Siv3DTest
-    ${SIV3D_TEST_SOURCES}
+    # ${SIV3D_TEST_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/App/Main.cpp"
 )
 target_include_directories(Siv3DTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../Test
@@ -280,9 +281,10 @@ target_link_options(Siv3DTest PRIVATE
     --emrun
     -g2
     -sASYNCIFY=1
-    "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/../Test/data@/data"
+    # "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/../Test/data@/data"
     "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/App/resources@/resources"
     "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/App/example@/example"
+    -Wl,--no-gc-sections
 )
 set_target_properties(Siv3DTest PROPERTIES
     SUFFIX ".html"
