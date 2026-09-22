@@ -200,6 +200,7 @@ namespace s3d
 		m_batches.assign(1, BatchBufferPos{});
 		m_vertexArrayWritePos	= 0;
 		m_indexArrayWritePos	= 0;
+		m_vertexBufferWritePos	= 0;
 	}
 
 	////////////////////////////////////////////////////////////////
