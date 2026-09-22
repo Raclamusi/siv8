@@ -41,13 +41,21 @@ int32 RunTest();
 
 namespace s3d
 {
+	namespace Test
+	{
+		// Returns an absolute path beneath the output root established by RunTest().
+		// Use '/' separators; absolute paths and '.' / '..' components are rejected.
+		[[nodiscard]]
+		FilePath OutputPath(FilePathView relativePath);
+	}
+
 	class ScopedLogSilencer
 	{
 	public:
 
 		ScopedLogSilencer()
 		{
-			Logger.setOutputLevel(LogType::Error);
+			Logger.setOutputLevel(LogLevel::Error);
 		}
 
 		~ScopedLogSilencer()
@@ -57,6 +65,6 @@ namespace s3d
 
 	private:
 
-		LogType m_oldOutputLevel = Logger.getOutputLevel();
+		LogLevel m_oldOutputLevel = Logger.getOutputLevel();
 	};
 }
