@@ -292,7 +292,6 @@ namespace s3d
 			m_screenCaptureImage.resize(sceneSize);
 		}
 
-		// TODO: 上下反転の原因調査
 		::glBindFramebuffer(GL_FRAMEBUFFER, m_sceneBuffers.nonMSAA->getFrameBuffer());
 		::glReadPixels(0, 0, sceneSize.x, sceneSize.y, GL_RGBA, GL_UNSIGNED_BYTE, m_screenCaptureImage.data());
 		::glBindFramebuffer(GL_FRAMEBUFFER, 0);

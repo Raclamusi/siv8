@@ -1785,8 +1785,8 @@ namespace s3d
 
 					commandState.screenMat = Mat3x2::Screen(vp.w, vp.h);
 					const Mat3x2 matrix = (commandState.transform * commandState.screenMat);
-					m_vsConstants->transform[0].set(matrix._11, matrix._12, matrix._31, matrix._32);
-					m_vsConstants->transform[1].set(matrix._21, matrix._22, 0.0f, 1.0f);
+					m_vsConstants->transform[0].set(matrix._11, -matrix._12, matrix._31, -matrix._32);
+					m_vsConstants->transform[1].set(matrix._21, -matrix._22, 0.0f, 1.0f);
 
 					LOG_COMMAND(fmt::format("Viewport[{}] ({}, {}, {}, {})", command.index, vp.x, vp.y, vp.w, vp.h));
 					break;
@@ -1840,8 +1840,8 @@ namespace s3d
 				{
 					commandState.transform = m_commandManager.getCombinedTransform(command.index);
 					const Mat3x2 matrix = (commandState.transform * commandState.screenMat);
-					m_vsConstants->transform[0].set(matrix._11, matrix._12, matrix._31, matrix._32);
-					m_vsConstants->transform[1].set(matrix._21, matrix._22, 0.0f, 1.0f);
+					m_vsConstants->transform[0].set(matrix._11, -matrix._12, matrix._31, -matrix._32);
+					m_vsConstants->transform[1].set(matrix._21, -matrix._22, 0.0f, 1.0f);
 
 					LOG_COMMAND(fmt::format("Transform[{}] {}", command.index, matrix));
 					break;
