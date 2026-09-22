@@ -76,8 +76,15 @@ namespace s3d
 
 		clear(GLES3ClearTarget::Scene | GLES3ClearTarget::BackBuffer);
 
-		::glGenVertexArrays(1, &m_fullScreenTriangleVAO);
-		::glGenSamplers(1, &m_fullScreenTriangleSampler);
+		// full screen triangle
+		{
+			::glGenVertexArrays(1, &m_fullScreenTriangleVAO);
+
+			::glGenSamplers(1, &m_fullScreenTriangleSampler);
+			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+		}
 	}
 
 	////////////////////////////////////////////////////////////////
