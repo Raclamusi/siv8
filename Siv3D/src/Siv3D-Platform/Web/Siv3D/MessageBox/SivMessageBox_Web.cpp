@@ -24,13 +24,13 @@ namespace s3d
 		MessageBoxResult MessageBoxOK(const StringView, const StringView text, const MessageBoxStyle)
 		{
 			siv3dShowMessageBoxOK(text.data(), text.size());
-			return MessageBoxResult::OK;
+			return MessageBoxResult::Ok;
 		}
 
 		MessageBoxResult MessageBoxOKCancel(const StringView, const StringView text, const MessageBoxStyle)
 		{
 			const bool ok = siv3dShowMessageBoxOKCancel(text.data(), text.size());
-			return (ok ? MessageBoxResult::OK : MessageBoxResult::Cancel);
+			return (ok ? MessageBoxResult::Ok : MessageBoxResult::Cancel);
 		}
 
 		MessageBoxResult MessageBoxYesNo(const StringView, const StringView text, const MessageBoxStyle)
