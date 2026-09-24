@@ -73,7 +73,7 @@ vec2 Pattern_UVTransform(const vec2 uv)
 vec2 Pattern_Skew(const vec2 v)
 {
 	mat2x2 transform = mat2x2(1.0, (1.0 / tan(3.1415926535 / 3.0)), 0.0, (1.0 / sin(3.1415926535 / 3.0)));
-	return (transform * v);
+	return (v * transform);
 }
 
 void main()

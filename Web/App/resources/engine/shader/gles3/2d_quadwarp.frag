@@ -63,7 +63,7 @@ vec4 s3d_textureColor(vec4 vertexColorPMA, const vec4 textureColorPMA)
 //
 void main()
 {
-	vec3 t = (vec3(UV, 1.0) * g_quadWarpInvHomography);
+	vec3 t = (g_quadWarpInvHomography * vec3(UV, 1.0));
 	vec2 uv = ((t.xy / t.z) * g_quadWarpUVTransform.xy + g_quadWarpUVTransform.zw);
 
 	vec4 texColor = texture(Texture0, uv);
