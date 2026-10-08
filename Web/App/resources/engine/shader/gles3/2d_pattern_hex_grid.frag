@@ -27,7 +27,7 @@ layout(location = 0) out vec4 FragColor;
 //
 //	Constant Buffer
 //
-layout(std140) uniform PSConstants2D
+layout(std140) uniform PSConstants0 // PSConstants2D
 {
 	vec4 g_patternBackgroundColorMul;
 	vec4 g_colorAdd;
@@ -36,7 +36,7 @@ layout(std140) uniform PSConstants2D
 	vec4 g_sdfShadowColorPMA;
 };
 
-layout(std140) uniform PSEffectConstants2D
+layout(std140) uniform PSConstants1 // PSEffectConstants2D
 {
 	mat2x4 g_patternUVTransform;
 	vec4 g_patternBackgroundColor;

@@ -41,7 +41,7 @@ vec4 s3d_premultiplyAlpha(const vec4 color)
 //
 //	Constant Buffer
 //
-layout(std140) uniform VSConstants2D
+layout(std140) uniform VSConstants0 // VSConstants2D
 {
 	mat3x4 g_transform;
 	vec4 g_colorMul;

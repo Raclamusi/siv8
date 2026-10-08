@@ -26,7 +26,7 @@ layout(location = 0) out vec4 FragColor;
 //
 //	Constant Buffer
 //
-layout(std140) uniform PSConstants2D
+layout(std140) uniform PSConstants0 // PSConstants2D
 {
 	vec4 g_patternBackgroundColorMul;
 	vec4 g_colorAdd;

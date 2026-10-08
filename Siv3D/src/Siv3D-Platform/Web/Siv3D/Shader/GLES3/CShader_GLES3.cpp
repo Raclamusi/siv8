@@ -404,20 +404,27 @@ namespace s3d
 
 		// 定数バッファのバインディングを設定
 		{
-			constexpr std::pair<const char*, GLuint> Binding[]
+			for (uint32 slot = 0; slot < Graphics::ConstantBufferSlotCount; ++slot)
 			{
-				{ "VSConstants2D", MakeUniformBlockBinding(ShaderStage::Vertex, 0) },
-				{ "PSConstants2D", MakeUniformBlockBinding(ShaderStage::Pixel, 0) },
-				{ "PSEffectConstants2D", MakeUniformBlockBinding(ShaderStage::Pixel, 1) },
-			};
-
-			for (const auto& [name, index] : Binding)
-			{
-				const GLuint blockIndex = ::glGetUniformBlockIndex(program, name);
+				const std::string name = fmt::format("VSConstants{}", slot);
+				const GLuint blockIndex = ::glGetUniformBlockIndex(program, name.c_str());
 
 				if (blockIndex != GL_INVALID_INDEX)
 				{
-					::glUniformBlockBinding(program, blockIndex, index);
+					const GLuint blockBinding = MakeUniformBlockBinding(ShaderStage::Vertex, slot);
+					::glUniformBlockBinding(program, blockIndex, blockBinding);
+				}
+			}
+
+			for (uint32 slot = 0; slot < Graphics::ConstantBufferSlotCount; ++slot)
+			{
+				const std::string name = fmt::format("PSConstants{}", slot);
+				const GLuint blockIndex = ::glGetUniformBlockIndex(program, name.c_str());
+
+				if (blockIndex != GL_INVALID_INDEX)
+				{
+					const GLuint blockBinding = MakeUniformBlockBinding(ShaderStage::Pixel, slot);
+					::glUniformBlockBinding(program, blockIndex, blockBinding);
 				}
 			}
 		}
