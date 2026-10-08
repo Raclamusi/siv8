@@ -14,15 +14,6 @@
 
 namespace s3d
 {
-	namespace
-	{
-		[[nodiscard]]
-		static float CalculateMaxScaling(const Mat3x2& mat)
-		{
-			return (Float2{ (mat._11 + mat._21), (mat._12 + mat._22) }.length() / Math::Sqrt2_v<float>);
-		}
-	}
-
 	////////////////////////////////////////////////////////////////
 	//
 	//	(constructor)
@@ -36,16 +27,66 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
+	//	pushConstantBuffer
+	//
+	////////////////////////////////////////////////////////////////
+
+	void GLES3Renderer2DCommandManager::pushConstantBuffer(const ShaderStage stage, const uint32 slot, const void* data, const size_t size)
+	{
+		m_constantBuffers.push(stage, slot, data, size);
+		if (m_constantBuffers.hasStateChange())
+		{
+			m_stateTracker.set(GLES3Renderer2DCommandType::SetConstantBuffer);
+		}
+		else
+		{
+			m_stateTracker.clear(GLES3Renderer2DCommandType::SetConstantBuffer);
+		}
+	}
+
+	uint32 GLES3Renderer2DCommandManager::beginConstantBufferScope(const ShaderStage stage, const uint32 slot, const void* data, const size_t size)
+	{
+		const uint32 previous = m_constantBuffers.save(stage, slot);
+		try
+		{
+			pushConstantBuffer(stage, slot, data, size);
+		}
+		catch (...)
+		{
+			m_constantBuffers.release(previous);
+			throw;
+		}
+		return previous;
+	}
+
+	void GLES3Renderer2DCommandManager::endConstantBufferScope(const ShaderStage stage, const uint32 slot, const uint32 previous)
+	{
+		m_constantBuffers.restore(stage, slot, previous);
+		if (m_constantBuffers.hasStateChange())
+		{
+			m_stateTracker.set(GLES3Renderer2DCommandType::SetConstantBuffer);
+		}
+		else
+		{
+			m_stateTracker.clear(GLES3Renderer2DCommandType::SetConstantBuffer);
+		}
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
 	//	reset
 	//
 	////////////////////////////////////////////////////////////////
 
 	void GLES3Renderer2DCommandManager::reset()
 	{
+		m_constantBuffers.reset();
+
 		// clear commands
 		{
 			m_commands.clear();
 			m_stateTracker.clear();
+			m_current.draw = {};
 		}
 
 		// clear buffers
@@ -54,7 +95,6 @@ namespace s3d
 			//m_nullDraws.clear();
 			m_buffer.colorMuls = { m_buffer.colorMuls.back() };
 			m_buffer.colorAdds = { m_buffer.colorAdds.back() };
-			m_buffer.quadWarpParameters	= { m_buffer.quadWarpParameters.back() };
 			m_buffer.patternParameters	= { m_buffer.patternParameters.back() };
 			m_buffer.blendStates = { m_buffer.blendStates.back() };
 			m_buffer.rasterizerStates = { m_buffer.rasterizerStates.back() };
@@ -78,8 +118,6 @@ namespace s3d
 			m_buffer.vertexShaders		= { VertexShader::IDType::Invalid() };
 			m_buffer.pixelShaders		= { PixelShader::IDType::Invalid() };
 			m_buffer.combinedTransforms = { m_buffer.combinedTransforms.back() };
-			//m_constants.clear();
-			//m_constantBufferCommands.clear();
 		}
 
 		// clear reserves
@@ -99,9 +137,6 @@ namespace s3d
 
 			m_commands.emplace_back(GLES3Renderer2DCommandType::ColorAdd, 0);
 			m_current.colorAdd = m_buffer.colorAdds.front();
-
-			m_commands.emplace_back(GLES3Renderer2DCommandType::QuadWarpParameters, 0);
-			m_current.quadWarpParameter = m_buffer.quadWarpParameters.front();
 
 			m_commands.emplace_back(GLES3Renderer2DCommandType::PatternParameters, 0);
 			m_current.patternParameter = m_buffer.patternParameters.front();
@@ -172,6 +207,11 @@ namespace s3d
 				m_current.psTextures.fill(Texture::IDType::Invalid());
 			}
 		}
+
+		for (uint32 index = 0; index < m_constantBuffers.size(); ++index)
+		{
+			m_commands.emplace_back(GLES3Renderer2DCommandType::SetConstantBuffer, index);
+		}
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -186,6 +226,7 @@ namespace s3d
 		{
 			m_commands.emplace_back(GLES3Renderer2DCommandType::Draw, static_cast<uint32>(m_buffer.draws.size()));
 			m_buffer.draws.push_back(m_current.draw);
+			m_current.draw.startIndex += m_current.draw.indexCount;
 			m_current.draw.indexCount = 0;
 		}
 
@@ -204,12 +245,6 @@ namespace s3d
 		{
 			m_commands.emplace_back(GLES3Renderer2DCommandType::ColorAdd, static_cast<uint32>(m_buffer.colorAdds.size()));
 			m_buffer.colorAdds.push_back(m_current.colorAdd);
-		}
-
-		if (m_stateTracker.has(GLES3Renderer2DCommandType::QuadWarpParameters))
-		{
-			m_commands.emplace_back(GLES3Renderer2DCommandType::QuadWarpParameters, static_cast<uint32>(m_buffer.quadWarpParameters.size()));
-			m_buffer.quadWarpParameters.push_back(m_current.quadWarpParameter);
 		}
 
 		if (m_stateTracker.has(GLES3Renderer2DCommandType::PatternParameters))
@@ -299,12 +334,6 @@ namespace s3d
 			m_buffer.combinedTransforms.push_back(m_current.combinedTransform);
 		}
 
-		//if (m_changes.has(GLES3Renderer2DCommandType::SetConstantBuffer))
-		//{
-		//	assert(not m_constantBufferCommands.isEmpty());
-		//	m_commands.emplace_back(GLES3Renderer2DCommandType::SetConstantBuffer, static_cast<uint32>(m_constantBufferCommands.size()) - 1);
-		//}
-
 		for (uint32 i = 0; i < Graphics::TextureSlotCount; ++i)
 		{
 			const auto command = ToEnum<GLES3Renderer2DCommandType>(FromEnum(GLES3Renderer2DCommandType::VSTexture0) + i);
@@ -327,6 +356,16 @@ namespace s3d
 			}
 		}
 
+		if (m_stateTracker.has(GLES3Renderer2DCommandType::SetConstantBuffer))
+		{
+			const uint32 first = static_cast<uint32>(m_constantBuffers.size());
+			m_constantBuffers.flush();
+			for (uint32 index = first; index < m_constantBuffers.size(); ++index)
+			{
+				m_commands.emplace_back(GLES3Renderer2DCommandType::SetConstantBuffer, index);
+			}
+		}
+
 		m_stateTracker.clear();
 	}
 
@@ -343,15 +382,13 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	pushUpdateBuffers
+	//	deferUpdateBuffers
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3Renderer2DCommandManager::pushUpdateBuffers(const uint32 batchIndex)
+	void GLES3Renderer2DCommandManager::deferUpdateBuffers(const uint32 batchIndex)
 	{
-		flush();
-
-		m_commands.emplace_back(GLES3Renderer2DCommandType::UpdateBuffers, batchIndex);
+		m_pendingBatchIndex = batchIndex;
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -360,11 +397,18 @@ namespace s3d
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3Renderer2DCommandManager::pushDraw(const Vertex2D::IndexType indexCount)
+	void GLES3Renderer2DCommandManager::pushDraw(const uint32 indexCount)
 	{
-		if (m_stateTracker.hasStateChange())
+		if (m_stateTracker.hasStateChange() || m_pendingBatchIndex)
 		{
 			flush();
+		}
+
+		if (m_pendingBatchIndex)
+		{
+			m_commands.emplace_back(GLES3Renderer2DCommandType::UpdateBuffers, *m_pendingBatchIndex);
+			m_current.draw.startIndex = 0;
+			m_pendingBatchIndex.reset();
 		}
 
 		m_current.draw.indexCount += indexCount;
@@ -459,52 +503,11 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	pushQuadWarpParameter, getQuadWarpParameter, getQuadWarpParameter
-	//
-	////////////////////////////////////////////////////////////////
-
-	void GLES3Renderer2DCommandManager::pushQuadWarpParameter(const std::array<Float4, 3>& params)
-	{
-		constexpr auto Command = GLES3Renderer2DCommandType::QuadWarpParameters;
-		auto& current = m_current.quadWarpParameter;
-		auto& buffer = m_buffer.quadWarpParameters;
-
-		if (not m_stateTracker.has(Command))
-		{
-			if (params != current)
-			{
-				current = params;
-				m_stateTracker.set(Command);
-			}
-		}
-		else
-		{
-			if (params == buffer.back())
-			{
-				m_stateTracker.clear(Command);
-			}
-
-			current = params;
-		}
-	}
-
-	const std::array<Float4, 3>& GLES3Renderer2DCommandManager::getQuadWarpParameter(const uint32 index) const
-	{
-		return m_buffer.quadWarpParameters[index];
-	}
-
-	const std::array<Float4, 3>& GLES3Renderer2DCommandManager::getQuadWarpParameter() const
-	{
-		return m_current.quadWarpParameter;
-	}
-
-	////////////////////////////////////////////////////////////////
-	//
 	//	pushPatternParameter, getPatternParameter, getPatternParameter
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3Renderer2DCommandManager::pushPatternParameter(const std::array<Float4, 3>& patternParameter)
+	void GLES3Renderer2DCommandManager::pushPatternParameter(const std::array<Float4, 4>& patternParameter)
 	{
 		constexpr auto Command = GLES3Renderer2DCommandType::PatternParameters;
 		auto& current = m_current.patternParameter;
@@ -529,12 +532,12 @@ namespace s3d
 		}
 	}
 
-	const std::array<Float4, 3>& GLES3Renderer2DCommandManager::getPatternParameter(const uint32 index) const
+	const std::array<Float4, 4>& GLES3Renderer2DCommandManager::getPatternParameter(const uint32 index) const
 	{
 		return m_buffer.patternParameters[index];
 	}
 
-	const std::array<Float4, 3>& GLES3Renderer2DCommandManager::getPatternParameter() const
+	const std::array<Float4, 4>& GLES3Renderer2DCommandManager::getPatternParameter() const
 	{
 		return m_current.patternParameter;
 	}
@@ -973,33 +976,12 @@ namespace s3d
 
 	void GLES3Renderer2DCommandManager::pushLocalTransform(const Mat3x2& local)
 	{
-		constexpr auto Command = GLES3Renderer2DCommandType::Transform;
-		auto& currentLocal = m_current.localTransform;
-		auto& currentCombined = m_current.combinedTransform;
-		auto& buffer = m_buffer.combinedTransforms;
-		const Mat3x2 combinedTransform = (local * m_current.cameraTransform);
-
-		if (not m_stateTracker.has(Command))
+		if (local == m_current.localTransform)
 		{
-			if (local != currentLocal)
-			{
-				currentLocal = local;
-				currentCombined = combinedTransform;
-				m_current.maxScaling = CalculateMaxScaling(combinedTransform);
-				m_stateTracker.set(Command);
-			}
+			return;
 		}
-		else
-		{
-			if (combinedTransform == buffer.back())
-			{
-				m_stateTracker.clear(Command);
-			}
-
-			currentLocal = local;
-			currentCombined = combinedTransform;
-			m_current.maxScaling = CalculateMaxScaling(combinedTransform);
-		}
+		m_current.localTransform = local;
+		updateAffineTransform();
 	}
 
 	const Mat3x2& GLES3Renderer2DCommandManager::getCurrentLocalTransform() const
@@ -1015,33 +997,12 @@ namespace s3d
 
 	void GLES3Renderer2DCommandManager::pushCameraTransform(const Mat3x2& camera)
 	{
-		constexpr auto Command = GLES3Renderer2DCommandType::Transform;
-		auto& currentCamera = m_current.cameraTransform;
-		auto& currentCombined = m_current.combinedTransform;
-		auto& buffer = m_buffer.combinedTransforms;
-		const Mat3x2 combinedTransform = (m_current.localTransform * camera);
-
-		if (not m_stateTracker.has(Command))
+		if (camera == m_current.cameraTransform)
 		{
-			if (camera != currentCamera)
-			{
-				currentCamera = camera;
-				currentCombined = combinedTransform;
-				m_current.maxScaling = CalculateMaxScaling(combinedTransform);
-				m_stateTracker.set(Command);
-			}
+			return;
 		}
-		else
-		{
-			if (combinedTransform == buffer.back())
-			{
-				m_stateTracker.clear(Command);
-			}
-
-			currentCamera = camera;
-			currentCombined = combinedTransform;
-			m_current.maxScaling = CalculateMaxScaling(combinedTransform);
-		}
+		m_current.cameraTransform = camera;
+		updateAffineTransform();
 	}
 
 	const Mat3x2& GLES3Renderer2DCommandManager::getCurrentCameraTransform() const
@@ -1051,29 +1012,65 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	getCombinedTransform, getCurrentCombinedTransform
+	//	QuadWarp and combined transforms
 	//
 	////////////////////////////////////////////////////////////////
 
-	const Mat3x2& GLES3Renderer2DCommandManager::getCombinedTransform(const uint32 index) const
+	void GLES3Renderer2DCommandManager::pushQuadWarpTransform(const Mat3x3& warp)
+	{
+		if (warp == m_current.quadWarpTransform)
+		{
+			return;
+		}
+		m_current.quadWarpTransform = warp;
+		updateTransform();
+	}
+
+	const Mat3x3& GLES3Renderer2DCommandManager::getCurrentQuadWarpTransform() const
+	{
+		return m_current.quadWarpTransform;
+	}
+
+	void GLES3Renderer2DCommandManager::updateAffineTransform()
+	{
+		m_current.affineTransform = (m_current.localTransform * m_current.cameraTransform);
+		m_current.rmsScaling = m_current.affineTransform.rmsScaling();
+		updateTransform();
+	}
+
+	void GLES3Renderer2DCommandManager::updateTransform()
+	{
+		constexpr auto Command = GLES3Renderer2DCommandType::Transform;
+		m_current.combinedTransform = (Mat3x3{ m_current.affineTransform } * m_current.quadWarpTransform);
+		if (m_current.combinedTransform == m_buffer.combinedTransforms.back())
+		{
+			m_stateTracker.clear(Command);
+		}
+		else
+		{
+			m_stateTracker.set(Command);
+		}
+	}
+
+	const Mat3x3& GLES3Renderer2DCommandManager::getCombinedTransform(const uint32 index) const
 	{
 		return m_buffer.combinedTransforms[index];
 	}
 
-	const Mat3x2& GLES3Renderer2DCommandManager::getCurrentCombinedTransform() const
+	const Mat3x3& GLES3Renderer2DCommandManager::getCurrentCombinedTransform() const
 	{
 		return m_current.combinedTransform;
 	}
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	getCurrentMaxScaling
+	//	getCurrentRMSScaling
 	//
 	////////////////////////////////////////////////////////////////
 
-	float GLES3Renderer2DCommandManager::getCurrentMaxScaling() const noexcept
+	float GLES3Renderer2DCommandManager::getCurrentRMSScaling() const noexcept
 	{
-		return m_current.maxScaling;
+		return m_current.rmsScaling;
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -1117,24 +1114,25 @@ namespace s3d
 		const auto command = ToEnum<GLES3Renderer2DCommandType>(FromEnum(GLES3Renderer2DCommandType::VSTexture0) + slot);
 		auto& current = m_current.vsTextures[slot];
 		auto& buffer = m_buffer.vsTextures[slot];
+		const auto id = texture.id();
+
+		if (id == current)
+		{
+			return;
+		}
+
+		m_reserved.textures.try_emplace(id, texture);
 
 		if (not m_stateTracker.has(command))
 		{
-			if (texture.id() != current)
-			{
-				current = texture.id();
-				m_stateTracker.set(command);
-			}
+			m_stateTracker.set(command);
 		}
-		else
+		else if (id == buffer.back())
 		{
-			if (texture.id() == buffer.back())
-			{
-				m_stateTracker.clear(command);
-			}
-
-			current = texture.id();
+			m_stateTracker.clear(command);
 		}
+
+		current = id;
 	}
 
 	const Texture::IDType& GLES3Renderer2DCommandManager::getVSTexture(const uint32 slot, const uint32 index) const
@@ -1190,24 +1188,25 @@ namespace s3d
 		const auto command = ToEnum<GLES3Renderer2DCommandType>(FromEnum(GLES3Renderer2DCommandType::PSTexture0) + slot);
 		auto& current = m_current.psTextures[slot];
 		auto& buffer = m_buffer.psTextures[slot];
+		const auto id = texture.id();
+
+		if (id == current)
+		{
+			return;
+		}
+
+		m_reserved.textures.try_emplace(id, texture);
 
 		if (not m_stateTracker.has(command))
 		{
-			if (texture.id() != current)
-			{
-				current = texture.id();
-				m_stateTracker.set(command);
-			}
+			m_stateTracker.set(command);
 		}
-		else
+		else if (id == buffer.back())
 		{
-			if (texture.id() == buffer.back())
-			{
-				m_stateTracker.clear(command);
-			}
-
-			current = texture.id();
+			m_stateTracker.clear(command);
 		}
+
+		current = id;
 	}
 
 	const Texture::IDType& GLES3Renderer2DCommandManager::getPSTexture(const uint32 slot, const uint32 index) const

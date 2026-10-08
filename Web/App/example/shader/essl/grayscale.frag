@@ -1,5 +1,16 @@
 #version 300 es
 
+//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
 precision mediump float;
 
 //
@@ -33,10 +44,15 @@ layout(std140) uniform PSConstants2D
 //
 //	Siv3D Functions
 //
+vec4 s3d_applyColorAdd(const vec4 colorPMA, const vec4 colorAdd)
+{
+	return (colorPMA + (colorAdd * colorPMA.a));
+}
+
 vec4 s3d_textureColor(vec4 vertexColorPMA, const vec4 textureColorPMA)
 {
 	vertexColorPMA *= textureColorPMA;
-	return (vertexColorPMA + (g_colorAdd * vertexColorPMA.a));
+	return s3d_applyColorAdd(vertexColorPMA, g_colorAdd);
 }
 
 //

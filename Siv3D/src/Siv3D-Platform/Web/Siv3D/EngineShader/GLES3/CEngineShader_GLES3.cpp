@@ -41,7 +41,7 @@ namespace s3d
 		{
 			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/fullscreen_triangle.vert") };
 			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/2d.vert") };
-			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/2d_quadwarp.vert") };
+			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern.vert") };
 
 			if (not m_vertexShaders.all([](const auto& vs) { return static_cast<bool>(vs); })) // もしロードに失敗したシェーダがあれば
 			{
@@ -53,7 +53,6 @@ namespace s3d
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/fullscreen_triangle.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_shape.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_texture.frag") };
-			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_quadwarp.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_line_dot.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_line_dash.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_line_long_dash.frag") };
@@ -71,6 +70,11 @@ namespace s3d
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/msdffont_outline_shadow.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/msdffont_glow.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/msdffont_print.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_halftone.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_wave.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_ripple.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_weave.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_truchet.frag") };
 
 			if (not m_pixelShaders.all([](const auto& ps) { return static_cast<bool>(ps); })) // もしロードに失敗したシェーダがあれば
 			{

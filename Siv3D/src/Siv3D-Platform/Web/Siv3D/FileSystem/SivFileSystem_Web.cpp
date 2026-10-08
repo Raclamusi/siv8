@@ -26,12 +26,6 @@ namespace s3d
 			return std::filesystem::path{ Unicode::ToUTF8(path) };
 		}
 
-		[[nodiscard]]
-		static FilePath FromPath(const std::filesystem::path& path)
-		{
-			return Unicode::FromUTF8(path.string());
-		}
-
 		namespace init
 		{
 			const static FilePath g_launchDirectory = FileSystem::CurrentDirectory();
@@ -93,7 +87,14 @@ namespace s3d
 
 		bool IsResourcePath(const FilePathView path) noexcept
 		{
-			return FullPath(path).starts_with(U"/resources/");
+			try
+			{
+				return FullPath(path).starts_with(U"/resources/");
+			}
+			catch (const std::filesystem::filesystem_error&)
+			{
+				return false;
+			}
 		}
 
 		////////////////////////////////////////////////////////////////
@@ -180,39 +181,6 @@ namespace s3d
 		FilePath VolumePath(const FilePathView)
 		{
 			return U"/";
-		}
-
-		////////////////////////////////////////////////////////////////
-		//
-		//	DirectoryContents
-		//
-		////////////////////////////////////////////////////////////////
-
-		Array<FilePath> DirectoryContents(const FilePathView path, const Recursive recursive)
-		{
-			if (path.isEmpty() || (not IsDirectory(path)))
-			{
-				return{};
-			}
-
-			Array<FilePath> paths;
-
-			if (recursive)
-			{
-				for (const auto& v : std::filesystem::recursive_directory_iterator{ detail::ToPath(path) })
-				{
-					paths.push_back(FullPath(detail::FromPath(v.path())));
-				}
-			}
-			else
-			{
-				for (const auto& v : std::filesystem::directory_iterator{ detail::ToPath(path) })
-				{
-					paths.push_back(FullPath(detail::FromPath(v.path())));
-				}
-			}
-
-			return paths;
 		}
 
 		////////////////////////////////////////////////////////////////

@@ -40,19 +40,17 @@ namespace s3d
 		}
 	}
 
-	inline constexpr uint32 ConstantBufferSlotCount = 12;
-
 	constexpr uint32 MakeUniformBlockBinding(ShaderStage stage, uint32 index) noexcept
 	{
 		if (stage == ShaderStage::Vertex)
 		{
-			// index 0-11 are used for VS
+			// index 0-13 are used for VS
 			return index;
 		}
 		else
 		{
-			// index 12-23 are used for PS
-			return (index + ConstantBufferSlotCount);
+			// index 14-27 are used for PS
+			return (index + Graphics::ConstantBufferSlotCount);
 		}
 	}
 

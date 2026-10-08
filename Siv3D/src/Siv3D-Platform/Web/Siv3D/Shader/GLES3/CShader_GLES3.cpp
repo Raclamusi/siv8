@@ -298,7 +298,7 @@ namespace s3d
 
 	void CShader_GLES3::setConstantBufferVS(const uint32 slot, IConstantBuffer* cb)
 	{
-		assert(slot < ConstantBufferSlotCount);
+		assert(slot < Graphics::ConstantBufferSlotCount);
 
 		const uint32 vsUniformBlockBinding = MakeUniformBlockBinding(ShaderStage::Vertex, slot);
 		::glBindBufferBase(GL_UNIFORM_BUFFER, vsUniformBlockBinding, static_cast<const ConstantBuffer_GLES3*>(cb)->getBuffer());
@@ -312,7 +312,7 @@ namespace s3d
 
 	void CShader_GLES3::setConstantBufferPS(const uint32 slot, IConstantBuffer* cb)
 	{
-		assert(slot < ConstantBufferSlotCount);
+		assert(slot < Graphics::ConstantBufferSlotCount);
 
 		const uint32 psUniformBlockBinding = MakeUniformBlockBinding(ShaderStage::Pixel, slot);
 		::glBindBufferBase(GL_UNIFORM_BUFFER, psUniformBlockBinding, static_cast<const ConstantBuffer_GLES3*>(cb)->getBuffer());

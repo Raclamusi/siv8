@@ -17,6 +17,7 @@ precision mediump float;
 // PSInput
 //
 in vec4 ColorPMA;
+in vec2 UV;
 
 //
 //	PSOutput
@@ -37,18 +38,25 @@ layout(std140) uniform PSConstants2D
 
 layout(std140) uniform PSEffectConstants2D
 {
-	vec4 g_patternUVTransform[2];
+	mat2x4 g_patternUVTransform;
 	vec4 g_patternBackgroundColor;
-	mat3x3 g_quadWarpInvHomography;
-	vec4 g_quadWarpUVTransform;
+	vec4 g_patternExtraParams;
 };
 
 //
 //	Siv3D Functions
 //
-vec4 s3d_shapeColor(const vec4 vertexColorPMA)
+vec2 s3d_transformPoint2D(const vec2 position, const mat2x4 transform)
 {
-	return (vertexColorPMA + (g_colorAdd * vertexColorPMA.a));
+	vec2 translation = transform[0].zw;
+	vec2 basisX = transform[0].xy;
+	vec2 basisY = transform[1].xy;
+	return (translation + (position.x * basisX) + (position.y * basisY));
+}
+
+vec4 s3d_applyColorAdd(const vec4 colorPMA, const vec4 colorAdd)
+{
+	return (colorPMA + (colorAdd * colorPMA.a));
 }
 
 vec4 s3d_premultiplyAlpha(const vec4 color)
@@ -59,15 +67,14 @@ vec4 s3d_premultiplyAlpha(const vec4 color)
 //
 //	Functions
 //
-vec4 Pattern_BackgroundColor()
+vec4 Pattern_BackgroundColorPMA()
 {
-	vec4 colorPMA = s3d_premultiplyAlpha(g_patternBackgroundColor * g_patternBackgroundColorMul);
-	return (colorPMA + (g_colorAdd * colorPMA.a));
+	return s3d_premultiplyAlpha(g_patternBackgroundColor * g_patternBackgroundColorMul);
 }
 
-vec2 Pattern_UVTransform(const vec2 uv)
+vec2 Pattern_UVTransform(const vec2 drawingPosition)
 {
-	return (g_patternUVTransform[0].zw + (uv.x * g_patternUVTransform[0].xy) + (uv.y * g_patternUVTransform[1].xy));
+	return s3d_transformPoint2D(drawingPosition, g_patternUVTransform);
 }
 
 vec2 Pattern_Integral(vec2 v)
@@ -76,23 +83,26 @@ vec2 Pattern_Integral(vec2 v)
 	return (floor(v) + max((2.0 * fract(v) - 1.0), 0.0));
 }
 
-float Pattern_CheckersFiltered(const vec2 p, const vec2 hv)
+float Pattern_CheckersFiltered(const vec2 p, const vec2 axisIntensity)
 {
 	vec2 fw = fwidth(p);
 	float w = max(fw.x, fw.y);
 	vec2 i = (Pattern_Integral(p + 0.5 * w) - Pattern_Integral(p - 0.5 * w));
-	i *= hv;
+	i *= axisIntensity;
 	i /= w;
 	return (i.x + i.y - 2.0 * i.x * i.y);
 }
 
 void main()
 {
-	vec2 uv = Pattern_UVTransform(gl_FragCoord.xy);
-	float c = Pattern_CheckersFiltered(uv, g_patternUVTransform[1].zw);
+	vec2 axisIntensity = g_patternUVTransform[1].zw; // (verticalIntensity, horizontalIntensity)
 
-	vec4 primary = s3d_shapeColor(ColorPMA);
-	vec4 background = Pattern_BackgroundColor();
+	vec2 drawingPosition = UV;
+	vec2 patternUV = Pattern_UVTransform(drawingPosition);
+	float c = Pattern_CheckersFiltered(patternUV, axisIntensity);
 
-	FragColor = mix(primary, background, c);
+	vec4 primary = ColorPMA;
+	vec4 background = Pattern_BackgroundColorPMA();
+
+	FragColor = s3d_applyColorAdd(mix(primary, background, c), g_colorAdd);
 }

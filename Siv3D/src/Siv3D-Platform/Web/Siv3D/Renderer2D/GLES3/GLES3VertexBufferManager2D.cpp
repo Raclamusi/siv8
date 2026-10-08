@@ -121,6 +121,11 @@ namespace s3d
 
 	Vertex2DBufferPointer GLES3VertexBufferManager2D::requestBuffer(const uint16 vertexCount, const uint32 indexCount, GLES3Renderer2DCommandManager& commandManager)
 	{
+		if (IndexBufferSize < indexCount)
+		{
+			return{ nullptr, nullptr, 0 };
+		}
+
 		// VB
 		{
 			const uint32 vertexArrayWritePosTarget = (m_vertexArrayWritePos + vertexCount);
@@ -156,7 +161,7 @@ namespace s3d
 			if ((VertexBufferSize < (pLastBatch->vertexPos + vertexCount)
 				|| (IndexBufferSize < (pLastBatch->indexPos + indexCount))))
 			{
-				commandManager.pushUpdateBuffers(static_cast<uint32>(m_batches.size()));
+				commandManager.deferUpdateBuffers(static_cast<uint32>(m_batches.size()));
 				m_batches.emplace_back();
 				pLastBatch = &m_batches.back();
 			}

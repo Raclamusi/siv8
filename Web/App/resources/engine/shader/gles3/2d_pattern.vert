@@ -27,9 +27,10 @@ out vec2 UV;
 //
 //	Siv3D Functions
 //
-vec4 s3d_positionTransform(const vec2 pos, const vec4 t[2])
+vec4 s3d_positionTransform(const vec2 position, const mat3x4 transform)
 {
-	return vec4(t[0].zw + (pos.x * t[0].xy) + (pos.y * t[1].xy), t[1].zw);
+	vec4 clip = (transform * vec3(position, 1.0));
+	return vec4(clip.xy, 0.0, clip.w);
 }
 
 vec4 s3d_premultiplyAlpha(const vec4 color)
@@ -42,7 +43,7 @@ vec4 s3d_premultiplyAlpha(const vec4 color)
 //
 layout(std140) uniform VSConstants2D
 {
-	vec4 g_transform[2];
+	mat3x4 g_transform;
 	vec4 g_colorMul;
 };
 

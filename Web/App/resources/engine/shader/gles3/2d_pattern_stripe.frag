@@ -17,6 +17,7 @@ precision mediump float;
 // PSInput
 //
 in vec4 ColorPMA;
+in vec2 UV;
 
 //
 //	PSOutput
@@ -37,18 +38,25 @@ layout(std140) uniform PSConstants2D
 
 layout(std140) uniform PSEffectConstants2D
 {
-	vec4 g_patternUVTransform[2];
+	mat2x4 g_patternUVTransform;
 	vec4 g_patternBackgroundColor;
-	mat3x3 g_quadWarpInvHomography;
-	vec4 g_quadWarpUVTransform;
+	vec4 g_patternExtraParams;
 };
 
 //
 //	Siv3D Functions
 //
-vec4 s3d_shapeColor(const vec4 vertexColorPMA)
+vec2 s3d_transformPoint2D(const vec2 position, const mat2x4 transform)
 {
-	return (vertexColorPMA + (g_colorAdd * vertexColorPMA.a));
+	vec2 translation = transform[0].zw;
+	vec2 basisX = transform[0].xy;
+	vec2 basisY = transform[1].xy;
+	return (translation + (position.x * basisX) + (position.y * basisY));
+}
+
+vec4 s3d_applyColorAdd(const vec4 colorPMA, const vec4 colorAdd)
+{
+	return (colorPMA + (colorAdd * colorPMA.a));
 }
 
 vec4 s3d_premultiplyAlpha(const vec4 color)
@@ -59,29 +67,31 @@ vec4 s3d_premultiplyAlpha(const vec4 color)
 //
 //	Functions
 //
-vec4 Pattern_BackgroundColor()
+vec4 Pattern_BackgroundColorPMA()
 {
-	vec4 colorPMA = s3d_premultiplyAlpha(g_patternBackgroundColor * g_patternBackgroundColorMul);
-	return (colorPMA + (g_colorAdd * colorPMA.a));
+	return s3d_premultiplyAlpha(g_patternBackgroundColor * g_patternBackgroundColorMul);
 }
 
-vec2 Pattern_UVTransform(const vec2 uv)
+vec2 Pattern_UVTransform(const vec2 drawingPosition)
 {
-	return (g_patternUVTransform[0].zw + (uv.x * g_patternUVTransform[0].xy) + (uv.y * g_patternUVTransform[1].xy));
+	return s3d_transformPoint2D(drawingPosition, g_patternUVTransform);
 }
 
 void main()
 {
-	float u = Pattern_UVTransform(gl_FragCoord.xy).x;
-	float fw = fwidth(u);
-	float repeat = (2.0 * fract(u) - 1.0);
+	float normalizedThickness = g_patternUVTransform[1].z; // thicknessScale / 2
+
+	vec2 drawingPosition = UV;
+	float stripeCoord = Pattern_UVTransform(drawingPosition).x;
+	float fw = fwidth(stripeCoord);
+	float repeat = (2.0 * fract(stripeCoord) - 1.0);
 	float value = abs(repeat);
 
-	float thicknessScale = (g_patternUVTransform[1].z * (1.0 + 2.0 * fw) - fw);
+	float thicknessScale = (normalizedThickness * (1.0 + 2.0 * fw) - fw);
 	float c = smoothstep((thicknessScale - fw), (thicknessScale + fw), value);
 
-	vec4 primary = s3d_shapeColor(ColorPMA);
-	vec4 background = Pattern_BackgroundColor();
+	vec4 primary = ColorPMA;
+	vec4 background = Pattern_BackgroundColorPMA();
 
-	FragColor = mix(primary, background, c);
+	FragColor = s3d_applyColorAdd(mix(primary, background, c), g_colorAdd);
 }

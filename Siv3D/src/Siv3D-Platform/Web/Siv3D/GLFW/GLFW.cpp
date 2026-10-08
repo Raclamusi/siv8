@@ -21,4 +21,14 @@ extern "C"
 
 		return window->keys;
 	}
+
+	GLFWAPI const char* glfwGetKeyName(int key, int scancode)
+	{
+		return nullptr;
+	}
+
+	GLFWAPI int glfwGetKeyScancode(int key)
+	{
+		return GLFW_RELEASE;
+	}
 }

@@ -39,9 +39,9 @@ layout(std140) uniform PSConstants2D
 //
 //	Siv3D Functions
 //
-vec4 s3d_shapeColor(const vec4 vertexColorPMA)
+vec4 s3d_applyColorAdd(const vec4 colorPMA, const vec4 colorAdd)
 {
-	return (vertexColorPMA + (g_colorAdd * vertexColorPMA.a));
+	return (colorPMA + (colorAdd * colorPMA.a));
 }
 
 //
@@ -58,5 +58,5 @@ void main()
 	float alpha2 = smoothstep((0.9 - w), (0.9 + w), distance2);
 	float alpha = max(alpha1, alpha2);
 
-	FragColor = s3d_shapeColor(ColorPMA * alpha);
+	FragColor = s3d_applyColorAdd((ColorPMA * alpha), g_colorAdd);
 }
