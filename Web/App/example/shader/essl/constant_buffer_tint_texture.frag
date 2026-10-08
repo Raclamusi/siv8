@@ -1,0 +1,76 @@
+#version 300 es
+
+//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
+precision mediump float;
+
+//
+//	Textures
+//
+uniform sampler2D Texture0;
+
+//
+// PSInput
+//
+in vec4 ColorPMA;
+in vec2 UV;
+
+//
+//	PSOutput
+//
+layout(location = 0) out vec4 FragColor;
+
+//
+//	Constant Buffer
+//
+layout(std140) uniform PSConstants0 // PSConstants2D
+{
+	vec4 g_patternBackgroundColorMul;
+	vec4 g_colorAdd;
+	vec4 g_sdfParam;
+	vec4 g_sdfOutlineColorPMA;
+	vec4 g_sdfShadowColorPMA;
+};
+
+layout(std140) uniform PSConstants2 // PSTint
+{
+	vec4 g_tint;
+};
+
+//
+//	Siv3D Functions
+//
+vec4 s3d_premultiplyAlpha(const vec4 color)
+{
+	return vec4((color.rgb * color.a), color.a);
+}
+
+vec4 s3d_applyColorAdd(const vec4 colorPMA, const vec4 colorAdd)
+{
+	return (colorPMA + (colorAdd * colorPMA.a));
+}
+
+vec4 s3d_textureColor(vec4 vertexColorPMA, const vec4 textureColorPMA)
+{
+	vertexColorPMA *= textureColorPMA;
+	return s3d_applyColorAdd(vertexColorPMA, g_colorAdd);
+}
+
+//
+//	Functions
+//
+void main()
+{
+	vec4 texColor = texture(Texture0, UV);
+
+	FragColor = (s3d_textureColor(ColorPMA, texColor) * s3d_premultiplyAlpha(g_tint));
+}
