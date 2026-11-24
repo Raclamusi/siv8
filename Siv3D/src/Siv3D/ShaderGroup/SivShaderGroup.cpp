@@ -12,7 +12,6 @@
 # include <Siv3D/ShaderGroup.hpp>
 # include <Siv3D/VertexShader.hpp>
 # include <Siv3D/PixelShader.hpp>
-# include <Siv3D/System.hpp>
 
 namespace s3d
 {
@@ -35,24 +34,18 @@ namespace s3d
 
 	ShaderGroup::operator VertexShader() const
 	{
-		if (const EngineOption::Renderer renderer = System::GetRendererType();
-			renderer == EngineOption::Renderer::Direct3D11)
-		{
-			assert(m_hlsl);
-			return *m_hlsl;
-		}
-		else if (renderer == EngineOption::Renderer::Metal)
-		{
-			assert(m_msl);
-			return *m_msl;
-		}
-		else if (renderer == EngineOption::Renderer::OpenGLES3)
-		{
-			assert(m_essl);
-			return *m_essl;
-		}
-
+	# if SIV3D_PLATFORM(WINDOWS)
+		assert(m_hlsl);
+		return *m_hlsl;
+	# elif SIV3D_PLATFORM(MACOS)
+		assert(m_msl);
+		return *m_msl;
+	# elif SIV3D_PLATFORM(WEB)
+		assert(m_essl);
+		return *m_essl;
+	# else
 		return{};
+	# endif
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -63,24 +56,18 @@ namespace s3d
 
 	ShaderGroup::operator PixelShader() const
 	{
-		if (const EngineOption::Renderer renderer = System::GetRendererType();
-			renderer == EngineOption::Renderer::Direct3D11)
-		{
-			assert(m_hlsl);
-			return *m_hlsl;
-		}
-		else if (renderer == EngineOption::Renderer::Metal)
-		{
-			assert(m_msl);
-			return *m_msl;
-		}
-		else if (renderer == EngineOption::Renderer::OpenGLES3)
-		{
-			assert(m_essl);
-			return *m_essl;
-		}
-
+	# if SIV3D_PLATFORM(WINDOWS)
+		assert(m_hlsl);
+		return *m_hlsl;
+	# elif SIV3D_PLATFORM(MACOS)
+		assert(m_msl);
+		return *m_msl;
+	# elif SIV3D_PLATFORM(WEB)
+		assert(m_essl);
+		return *m_essl;
+	# else
 		return{};
+	# endif
 	}
 
 	////////////////////////////////////////////////////////////////
