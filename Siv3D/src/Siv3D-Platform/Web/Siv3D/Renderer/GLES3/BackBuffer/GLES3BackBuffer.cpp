@@ -17,6 +17,8 @@
 # include <Siv3D/Error/InternalEngineError.hpp>
 # include <Siv3D/Shader/IShader.hpp>
 # include <Siv3D/Scene/SceneUtility.hpp>
+# include <Siv3D/Cursor/ICursor.hpp>
+# include <Siv3D/Renderer2D/IRenderer2D.hpp>
 # include <Siv3D/EngineShader/IEngineShader.hpp>
 # include <Siv3D/Renderer/GLES3/CRenderer_GLES3.hpp>
 # include <Siv3D/Shader/GLES3/CShader_GLES3.hpp>
@@ -64,14 +66,8 @@ namespace s3d
 		m_backBufferSize = Window::GetState().frameBufferSize;
 
 		{
-			const Size sceneSize = Window::GetState().virtualSize;
-
-			m_sceneBuffers.nonMSAA = GLES3InternalTexture2D::CreateRenderTexture(sceneSize);
-
-			if (m_sceneBuffers.sampleCount > 1)
-			{
-				m_sceneBuffers.msaa = GLES3InternalTexture2D::CreateMSRenderTexture(sceneSize, m_sceneBuffers.sampleCount);
-			}
+			m_sceneState.configure(SceneConfig{}, Window::GetState());
+			m_sceneBuffers = createSceneBuffers(m_sceneState.renderResolution(), m_sceneBuffers.sampleCount);
 		}
 
 		clear(GLES3ClearTarget::Scene | GLES3ClearTarget::BackBuffer);
@@ -97,7 +93,8 @@ namespace s3d
 	{
 		if (clearTarget & GLES3ClearTarget::Scene)
 		{
-			m_sceneBuffers.getSceneTexture().clear(m_sceneStyle.backgroundColor);
+			m_sceneBuffers.resolved = false;
+			m_sceneBuffers.getSceneTexture().clear(m_sceneStyle.getFrameBackgroundColor());
 		}
 
 		if (clearTarget & GLES3ClearTarget::BackBuffer)
@@ -123,26 +120,48 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	setSceneResizeMode
+	//	configureScene
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3BackBuffer::setSceneResizeMode(const ResizeMode resizeMode)
+	void GLES3BackBuffer::configureScene(const SceneConfig& config)
 	{
-		m_sceneResizeMode = resizeMode;
-
-		updateSceneBufferSize();
+		auto state = m_sceneState;
+		state.configure(config, Window::GetState());
+		applySceneState(state, m_sceneBuffers.sampleCount);
 	}
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	getSceneResizeMode
+	//	getSceneConfig
 	//
 	////////////////////////////////////////////////////////////////
 
-	ResizeMode GLES3BackBuffer::getSceneResizeMode() const noexcept
+	SceneConfig GLES3BackBuffer::getSceneConfig() const noexcept
 	{
-		return m_sceneResizeMode;
+		return m_sceneState.config;
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	setSceneSampleCount
+	//
+	////////////////////////////////////////////////////////////////
+
+	void GLES3BackBuffer::setSceneSampleCount(const uint32 sampleCount)
+	{
+		applySceneState(m_sceneState, sampleCount);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getSceneSampleCount
+	//
+	////////////////////////////////////////////////////////////////
+
+	uint32 GLES3BackBuffer::getSceneSampleCount() const noexcept
+	{
+		return m_sceneBuffers.sampleCount;
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -155,14 +174,9 @@ namespace s3d
 	{
 		LOG_TRACE("GLES3BackBuffer::updateSceneBufferSize()");
 
-		if (m_sceneResizeMode == ResizeMode::Actual)
-		{
-			resizeSceneBuffer(Window::GetState().frameBufferSize);
-		}
-		else if (m_sceneResizeMode == ResizeMode::Virtual)
-		{
-			resizeSceneBuffer(Window::GetState().virtualSize);
-		}
+		auto state = m_sceneState;
+		state.updateWindow(Window::GetState());
+		applySceneState(state, m_sceneBuffers.sampleCount);
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -173,15 +187,7 @@ namespace s3d
 
 	void GLES3BackBuffer::renderSceneToBackBuffer()
 	{
-		if (m_sceneBuffers.sampleCount > 1)
-		{
-			const auto sceneSize = getSceneBufferSize();
-
-			::glBindFramebuffer(GL_READ_FRAMEBUFFER, m_sceneBuffers.msaa->getFrameBuffer());
-			::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_sceneBuffers.nonMSAA->getFrameBuffer());
-			::glBlitFramebuffer(0, 0, sceneSize.x, sceneSize.y, 0, 0, sceneSize.x, sceneSize.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-			::glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		}
+		resolveScene();
 
 		::glActiveTexture(GL_TEXTURE0);
 		::glBindTexture(GL_TEXTURE_2D, m_sceneBuffers.nonMSAA->getTexture());
@@ -202,8 +208,6 @@ namespace s3d
 		LOG_DEBUG(fmt::format("GLES3BackBuffer::resizeBackBuffer({})", backBufferSize));
 
 		m_backBufferSize = backBufferSize;
-
-		updateSceneBufferSize();
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -219,29 +223,13 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	resizeSceneBuffer
+	//	getSceneSize
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3BackBuffer::resizeSceneBuffer(const Size size)
+	const Size& GLES3BackBuffer::getSceneSize() const noexcept
 	{
-		assert((0 < size.x) && (0 < size.y));
-
-		if (getSceneBufferSize() == size)
-		{
-			return;
-		}
-
-		LOG_DEBUG(fmt::format("GLES3BackBuffer::resizeSceneBuffer({})", size));
-
-		m_sceneBuffers.nonMSAA = GLES3InternalTexture2D::CreateRenderTexture(size);
-
-		if (m_sceneBuffers.sampleCount > 1)
-		{
-			m_sceneBuffers.msaa = GLES3InternalTexture2D::CreateMSRenderTexture(size, m_sceneBuffers.sampleCount);
-		}
-
-		clear(GLES3ClearTarget::Scene | GLES3ClearTarget::BackBuffer);
+		return m_sceneState.sceneSize;
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -263,7 +251,7 @@ namespace s3d
 
 	std::pair<double, RectF> GLES3BackBuffer::getLetterboxComposition() const noexcept
 	{
-		return SceneMisc::CalculateLetterboxComposition(m_backBufferSize, getSceneBufferSize());
+		return m_sceneState.composition();
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -274,6 +262,7 @@ namespace s3d
 
 	void GLES3BackBuffer::bindSceneTextureAsRenderTarget()
 	{
+		m_sceneBuffers.resolved = false;
 		::glBindFramebuffer(GL_FRAMEBUFFER, m_sceneBuffers.getSceneTexture().getFrameBuffer());
 	}
 
@@ -291,6 +280,8 @@ namespace s3d
 		{
 			m_screenCaptureImage.resize(sceneSize);
 		}
+
+		resolveScene();
 
 		::glBindFramebuffer(GL_FRAMEBUFFER, m_sceneBuffers.nonMSAA->getFrameBuffer());
 		::glReadPixels(0, 0, sceneSize.x, sceneSize.y, GL_RGBA, GL_UNSIGNED_BYTE, m_screenCaptureImage.data());
@@ -330,8 +321,8 @@ namespace s3d
 		// render states
 		{
 			::glBindSampler(0, m_fullScreenTriangleSampler);
-			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_MIN_FILTER, ToGLenum(m_sceneStyle.textureFilter));
-			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_MAG_FILTER, ToGLenum(m_sceneStyle.textureFilter));
+			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_MIN_FILTER, ToGLenum(m_sceneState.config.scalingFilter));
+			::glSamplerParameteri(m_fullScreenTriangleSampler, GL_TEXTURE_MAG_FILTER, ToGLenum(m_sceneState.config.scalingFilter));
 
 			m_pRenderer->getBlendState().set(BlendState::Opaque);
 		//	m_pRenderer->getDepthStencilState().set(DepthStencilState::Default2D);
@@ -358,5 +349,69 @@ namespace s3d
 		}
 
 		CheckOpenGLError();
+	}
+
+	void GLES3BackBuffer::resolveScene()
+	{
+		if (m_sceneBuffers.resolved)
+		{
+			return;
+		}
+
+		if (m_sceneBuffers.sampleCount > 1)
+		{
+			const auto sceneSize = m_sceneBuffers.msaa->size();
+
+			::glBindFramebuffer(GL_READ_FRAMEBUFFER, m_sceneBuffers.msaa->getFrameBuffer());
+			::glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_sceneBuffers.nonMSAA->getFrameBuffer());
+			::glBlitFramebuffer(0, 0, sceneSize.x, sceneSize.y, 0, 0, sceneSize.x, sceneSize.y, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			::glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		}
+
+		m_sceneBuffers.resolved = true;
+	}
+
+	GLES3BackBuffer::SceneBuffer GLES3BackBuffer::createSceneBuffers(const Size size, const uint32 sampleCount) const
+	{
+		SceneBuffer buffers;
+		buffers.sampleCount = sampleCount;
+		buffers.nonMSAA = GLES3InternalTexture2D::CreateRenderTexture(size);
+		if (sampleCount > 1)
+		{
+			buffers.msaa = GLES3InternalTexture2D::CreateMSRenderTexture(size, sampleCount);
+		}
+		return buffers;
+	}
+
+	void GLES3BackBuffer::applySceneState(const SceneMisc::RenderState& state, const uint32 sampleCount)
+	{
+		const bool stateChanged = (state != m_sceneState);
+		const bool samplesChanged = (sampleCount != m_sceneBuffers.sampleCount);
+		if (not stateChanged && not samplesChanged)
+		{
+			return;
+		}
+		SceneMisc::ValidateSceneSize(state.sceneSize);
+		const Size renderResolution = state.renderResolution();
+		SceneMisc::ValidateSceneSize(renderResolution);
+		const bool dimensionsChanged = ((renderResolution != getSceneBufferSize()) || (state.sceneSize != m_sceneState.sceneSize));
+		const bool replaceBuffer = ((renderResolution != getSceneBufferSize()) || samplesChanged);
+		if (dimensionsChanged || samplesChanged)
+		{
+			if (replaceBuffer)
+			{
+				m_sceneBuffers = createSceneBuffers(renderResolution, sampleCount);;
+			}
+			clear(GLES3ClearTarget::Scene | GLES3ClearTarget::BackBuffer);
+		}
+		if (dimensionsChanged)
+		{
+			SIV3D_ENGINE(Renderer2D)->setSceneScale(Float2{ (float(renderResolution.x) / state.sceneSize.x), (float(renderResolution.y) / state.sceneSize.y) });
+		}
+		if (stateChanged)
+		{
+			m_sceneState = state;
+			SIV3D_ENGINE(Cursor)->updateBaseWindowTransform();
+		}
 	}
 }

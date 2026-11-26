@@ -23,7 +23,7 @@ namespace s3d
 
 		void init();
 
-		void set(const BlendState& state, const Float4& blendColor = Float4{ 0, 0, 0, 0 });
+		void set(const BlendState& state, const Float4& blendColor = Float4{ 0, 0, 0, 0 }, uint8 colorWriteMask = 0xFF);
 
 	private:
 

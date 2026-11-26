@@ -45,17 +45,6 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	getRendererType
-	//
-	////////////////////////////////////////////////////////////////
-
-	EngineOption::Renderer CRenderer_GLES3::getRendererType() const noexcept
-	{
-		return EngineOption::Renderer::OpenGLES3;
-	}
-
-	////////////////////////////////////////////////////////////////
-	//
 	//	init
 	//
 	////////////////////////////////////////////////////////////////
@@ -101,13 +90,16 @@ namespace s3d
 
 	void CRenderer_GLES3::beginFrame()
 	{
+		m_backBuffer.getSceneStyle().beginFrame();
 		m_backBuffer.clear(GLES3ClearTarget::Scene | GLES3ClearTarget::BackBuffer);
 
 		if (const Size windowFrameBufferSize = SIV3D_ENGINE(Window)->getState().frameBufferSize;
-			windowFrameBufferSize != m_backBuffer.getBackBufferSize())
+			(0 < windowFrameBufferSize.x) && (0 < windowFrameBufferSize.y)
+			&& (windowFrameBufferSize != m_backBuffer.getBackBufferSize()))
 		{
 			m_backBuffer.resizeBackBuffer(windowFrameBufferSize);
 		}
+		m_backBuffer.updateSceneBufferSize();
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -149,35 +141,57 @@ namespace s3d
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	setSceneResizeMode
+	//	configureScene
 	//
 	////////////////////////////////////////////////////////////////
 
-	void CRenderer_GLES3::setSceneResizeMode(const ResizeMode resizeMode)
+	void CRenderer_GLES3::configureScene(const SceneConfig& config)
 	{
-		m_backBuffer.setSceneResizeMode(resizeMode);
+		m_backBuffer.configureScene(config);
 	}
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	getSceneResizeMode
+	//	getSceneConfig
 	//
 	////////////////////////////////////////////////////////////////
 
-	ResizeMode CRenderer_GLES3::getSceneResizeMode() const noexcept
+	SceneConfig CRenderer_GLES3::getSceneConfig() const noexcept
 	{
-		return m_backBuffer.getSceneResizeMode();
+		return m_backBuffer.getSceneConfig();
 	}
 
 	////////////////////////////////////////////////////////////////
 	//
-	//	resizeSceneBuffer
+	//	setSceneSampleCount
 	//
 	////////////////////////////////////////////////////////////////
 
-	void CRenderer_GLES3::resizeSceneBuffer(const Size size)
+	void CRenderer_GLES3::setSceneSampleCount(const uint32 sampleCount)
 	{
-		m_backBuffer.resizeSceneBuffer(size);
+		return m_backBuffer.setSceneSampleCount(sampleCount);
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getSceneSampleCount
+	//
+	////////////////////////////////////////////////////////////////
+
+	uint32 CRenderer_GLES3::getSceneSampleCount() const noexcept
+	{
+		return m_backBuffer.getSceneSampleCount();
+	}
+
+	////////////////////////////////////////////////////////////////
+	//
+	//	getSceneSize
+	//
+	////////////////////////////////////////////////////////////////
+
+	const Size& CRenderer_GLES3::getSceneSize() const noexcept
+	{
+		return m_backBuffer.getSceneSize();
 	}
 
 	////////////////////////////////////////////////////////////////
@@ -248,9 +262,10 @@ namespace s3d
 	//
 	////////////////////////////////////////////////////////////////
 
-	void CRenderer_GLES3::captureScreenshot()
+	bool CRenderer_GLES3::captureScreenshot()
 	{
 		m_backBuffer.capture();
+		return true;
 	}
 
 	////////////////////////////////////////////////////////////////

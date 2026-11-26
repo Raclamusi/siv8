@@ -42,6 +42,7 @@ namespace s3d
 			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/fullscreen_triangle.vert") };
 			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/2d.vert") };
 			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern.vert") };
+			m_vertexShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing.vert") };
 
 			if (not m_vertexShaders.all([](const auto& vs) { return static_cast<bool>(vs); })) // もしロードに失敗したシェーダがあれば
 			{
@@ -75,6 +76,16 @@ namespace s3d
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_ripple.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_weave.frag") };
 			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/2d_pattern_truchet.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_resample.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_resample_region.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_downsample.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_downsample_region.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_gaussian.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_gaussian_region.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_dual_up.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_dual_up_region.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_dual_blend.frag") };
+			m_pixelShaders << ESSL{ Resource(U"engine/shader/gles3/texture_processing_dual_blend_region.frag") };
 
 			if (not m_pixelShaders.all([](const auto& ps) { return static_cast<bool>(ps); })) // もしロードに失敗したシェーダがあれば
 			{

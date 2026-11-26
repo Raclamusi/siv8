@@ -13,7 +13,6 @@
 # include <Siv3D/UserAction.hpp>
 # include <Siv3D/Math.hpp>
 # include <Siv3D/UserAction/IUserAction.hpp>
-# include <Siv3D/Renderer/IRenderer.hpp>
 # include <Siv3D/Error/InternalEngineError.hpp>
 # include <Siv3D/Engine/Siv3DEngine.hpp>
 # include <Siv3D/EngineLog.hpp>
@@ -330,11 +329,6 @@ namespace s3d
 		m_state.fullscreen = fullscreen;
 
 		updateState();
-
-		if (Scene::GetResizeMode() != ResizeMode::Keep)
-		{
-			SIV3D_ENGINE(Renderer)->updateSceneSize();
-		}
 	}
 
 	////////////////////////////////////////////////////////////////

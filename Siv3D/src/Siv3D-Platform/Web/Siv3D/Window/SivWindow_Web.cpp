@@ -1,0 +1,30 @@
+//-----------------------------------------------
+//
+//	This file is part of the Siv3D Engine.
+//
+//	Copyright (c) 2008-2026 Ryo Suzuki
+//	Copyright (c) 2016-2026 OpenSiv3D Project
+//
+//	Licensed under the MIT License.
+//
+//-----------------------------------------------
+
+# include <Siv3D/Window/WindowUtility.hpp>
+
+namespace s3d
+{
+	namespace WindowMisc
+	{
+		bool CenterWindowOnCurrentScreen()
+		{
+			// Not supported
+			return false;
+		}
+
+		bool CenterWindowOnScreen(const size_t)
+		{
+			// Not supported
+			return false;
+		}
+	}
+}

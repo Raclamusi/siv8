@@ -31,7 +31,7 @@ namespace s3d
 	//
 	////////////////////////////////////////////////////////////////
 
-	void GLES3BlendState::set(const BlendState& state, const Float4& blendColor)
+	void GLES3BlendState::set(const BlendState& state, const Float4& blendColor, const uint8)
 	{
 		const auto newState = std::make_pair(state, blendColor);
 

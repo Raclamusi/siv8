@@ -16,6 +16,7 @@
 # include <Siv3D/Graphics.hpp>
 # include <Siv3D/Image.hpp>
 # include <Siv3D/Scene/SceneStyle.hpp>
+# include <Siv3D/Scene/SceneUtility.hpp>
 # include <Siv3D/Renderer/GLES3/OpenGL.hpp>
 # include "GLES3ClearTarget.hpp"
 # include "GLES3InternalTexture2D.hpp"
@@ -38,10 +39,15 @@ namespace s3d
 		[[nodiscard]]
 		SceneStyle& getSceneStyle() noexcept;
 
-		void setSceneResizeMode(ResizeMode resizeMode);
+		void configureScene(const SceneConfig& config);
 
 		[[nodiscard]]
-		ResizeMode getSceneResizeMode() const noexcept;
+		SceneConfig getSceneConfig() const noexcept;
+
+		void setSceneSampleCount(uint32 sampleCount);
+
+		[[nodiscard]]
+		uint32 getSceneSampleCount() const noexcept;
 
 		void updateSceneBufferSize();
 
@@ -52,7 +58,8 @@ namespace s3d
 		[[nodiscard]]
 		const Size& getBackBufferSize() const noexcept;
 
-		void resizeSceneBuffer(Size size);
+		[[nodiscard]]
+		const Size& getSceneSize() const noexcept;
 
 		[[nodiscard]]
 		const Size& getSceneBufferSize() const noexcept;
@@ -76,7 +83,7 @@ namespace s3d
 
 		SceneStyle m_sceneStyle;
 
-		ResizeMode m_sceneResizeMode	= Scene::DefaultResizeMode;
+		SceneMisc::RenderState m_sceneState;
 
 		struct SceneBuffer
 		{
@@ -85,6 +92,8 @@ namespace s3d
 			std::unique_ptr<GLES3InternalTexture2D> msaa;
 
 			std::unique_ptr<GLES3InternalTexture2D> nonMSAA;
+
+			bool resolved = false;
 
 			GLES3InternalTexture2D& getSceneTexture() noexcept
 			{
@@ -105,5 +114,12 @@ namespace s3d
 		GLuint m_fullScreenTriangleSampler = 0;
 
 		void drawFullScreenTriangle();
+
+		void resolveScene();
+
+		[[nodiscard]]
+		SceneBuffer createSceneBuffers(Size size, uint32 sampleCount) const;
+
+		void applySceneState(const SceneMisc::RenderState& state, uint32 sampleCount);
 	};
 }
